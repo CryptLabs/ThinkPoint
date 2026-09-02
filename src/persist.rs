@@ -20,6 +20,8 @@ pub const UDEV_PATH: &str = "/etc/udev/rules.d/70-thinkpoint.rules";
 #[derive(Debug, Clone)]
 pub struct XSetting {
     pub device: String,
+    /// Some(false) means the device was deliberately switched off.
+    pub enabled: Option<bool>,
     pub button_map: Option<Vec<u8>>,
     pub props: Vec<(String, Vec<String>)>,
 }
@@ -96,10 +98,13 @@ pub fn render_profile(settings: &[XSetting]) -> String {
     out.push_str("# thinkpoint profile\n");
     out.push_str("# Replayed by:  thinkpoint --restore\n\n");
     for s in settings {
-        if s.button_map.is_none() && s.props.is_empty() {
+        if s.enabled.is_none() && s.button_map.is_none() && s.props.is_empty() {
             continue;
         }
         out.push_str(&format!("device = {}\n", s.device));
+        if let Some(enabled) = s.enabled {
+            out.push_str(&format!("enabled = {}\n", if enabled { 1 } else { 0 }));
+        }
         if let Some(map) = &s.button_map {
             let joined: Vec<String> = map.iter().map(|b| b.to_string()).collect();
             out.push_str(&format!("button-map = {}\n", joined.join(" ")));
@@ -141,9 +146,15 @@ pub fn load_profile() -> Result<Vec<XSetting>> {
         match key {
             "device" => settings.push(XSetting {
                 device: rest.to_string(),
+                enabled: None,
                 button_map: None,
                 props: Vec::new(),
             }),
+            "enabled" => {
+                if let Some(current) = settings.last_mut() {
+                    current.enabled = Some(rest != "0");
+                }
+            }
             "button-map" => {
                 let Some(current) = settings.last_mut() else {
                     continue;
@@ -239,6 +250,7 @@ mod tests {
     fn profile_survives_a_round_trip() {
         let original = vec![XSetting {
             device: "TPPS/2 Elan TrackPoint".to_string(),
+            enabled: None,
             button_map: Some(vec![1, 0, 3, 4, 5, 6, 7]),
             props: vec![(
                 "libinput Accel Speed".to_string(),
@@ -260,6 +272,7 @@ mod tests {
             match key.trim() {
                 "device" => parsed.push(XSetting {
                     device: rest.trim().to_string(),
+                    enabled: None,
                     button_map: None,
                     props: Vec::new(),
                 }),
@@ -288,9 +301,33 @@ mod tests {
     }
 
     #[test]
+    fn a_disabled_device_is_written_to_the_profile() {
+        let text = render_profile(&[XSetting {
+            device: "SynPS/2 Synaptics TouchPad".to_string(),
+            enabled: Some(false),
+            button_map: None,
+            props: Vec::new(),
+        }]);
+        assert!(text.contains("device = SynPS/2 Synaptics TouchPad"));
+        assert!(text.contains("enabled = 0"));
+    }
+
+    #[test]
+    fn a_device_with_nothing_customised_is_omitted() {
+        let text = render_profile(&[XSetting {
+            device: "Some Mouse".to_string(),
+            enabled: None,
+            button_map: None,
+            props: Vec::new(),
+        }]);
+        assert!(!text.contains("Some Mouse"));
+    }
+
+    #[test]
     fn a_property_name_with_spaces_stays_intact() {
         let text = render_profile(&[XSetting {
             device: "Some Mouse".to_string(),
+            enabled: None,
             button_map: None,
             props: vec![(
                 "libinput Natural Scrolling Enabled".to_string(),

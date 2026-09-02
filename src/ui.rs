@@ -89,7 +89,20 @@ fn draw_devices(frame: &mut Frame, app: &App, area: Rect) {
         .devices
         .iter()
         .map(|d| {
-            let mut spans = vec![Span::raw(d.name.clone())];
+            let mut spans = vec![Span::styled(
+                d.name.clone(),
+                if d.enabled {
+                    Style::default()
+                } else {
+                    Style::default().fg(DIM).add_modifier(Modifier::CROSSED_OUT)
+                },
+            )];
+            if !d.enabled {
+                spans.push(Span::styled(
+                    "  off",
+                    Style::default().fg(OFF).add_modifier(Modifier::BOLD),
+                ));
+            }
             if d.dirty() {
                 spans.push(Span::styled(" ●", Style::default().fg(PENDING)));
             }
@@ -126,7 +139,13 @@ fn draw_devices(frame: &mut Frame, app: &App, area: Rect) {
 
 fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::Detail;
-    let outer = panel(&app.device().name, focused);
+    let device = app.device();
+    let title = if device.enabled {
+        device.name.clone()
+    } else {
+        format!("{} — disabled", device.name)
+    };
+    let outer = panel(&title, focused);
     let inner = outer.inner(area);
     frame.render_widget(outer, area);
 
@@ -385,6 +404,28 @@ fn draw_attrs(frame: &mut Frame, app: &App, area: Rect, focused: bool) {
 /// the tool teachable rather than magic.
 fn draw_hint(frame: &mut Frame, app: &App, area: Rect) {
     let device = app.device();
+
+    // With the device list focused, the action in reach is the on/off toggle,
+    // so show that command rather than one from a tab you are not looking at.
+    if app.focus == Focus::Devices && device.id().is_some() {
+        let text = crate::xinput::set_enabled_command(&device.name, !device.enabled);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                text,
+                Style::default().fg(Color::Magenta),
+            )))
+            .wrap(Wrap { trim: true })
+            .block(
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_style(Style::default().fg(DIM))
+                    .title(Span::styled(" what t would run ", Style::default().fg(DIM))),
+            ),
+            area,
+        );
+        return;
+    }
+
     let text = match app.tab {
         Tab::Buttons if !device.pending_buttons.is_empty() => {
             crate::xinput::button_map_command(&device.name, &device.pending_buttons)
@@ -442,7 +483,7 @@ fn draw_keys(frame: &mut Frame, app: &App, area: Rect) {
     let keys = if app.modal.is_some() {
         "esc close"
     } else {
-        "↑↓ move · ←→ adjust · tab section · space toggle · a apply · p drift · m meter · s save · ? help · q quit"
+        "↑↓ move · ←→ adjust · space toggle · a apply · t on/off · p drift · m meter · s save · ? help · q quit"
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
@@ -709,6 +750,7 @@ fn help_lines() -> Vec<Line<'static>> {
         ("e", "type a value for the selected setting"),
         ("a", "apply everything staged in this section"),
         ("u", "reset the button map to how it was at start-up"),
+        ("t", "turn the selected device off or on (applies at once)"),
         ("p", "stage the drift-reducing preset on this device"),
         ("s", "save — udev rule for sysfs, profile for X settings"),
         ("d", "detect which device sends a button press"),
@@ -793,6 +835,8 @@ mod tests {
                 pending: vec!["0.000000".into()],
                 original: vec!["0.000000".into()],
             }],
+            enabled: true,
+            originally_enabled: true,
             sysfs: Some(Node {
                 path: PathBuf::from("/sys/devices/platform/i8042/serio1"),
                 description: "i8042 AUX port".into(),
@@ -915,6 +959,38 @@ mod tests {
             screen.contains("no drift_time"),
             "the status bar should be honest about the limit:\n{screen}"
         );
+    }
+
+    #[test]
+    fn a_disabled_device_is_marked_in_the_list_and_the_panel() {
+        let mut a = app(Tab::Buttons);
+        a.devices[0].enabled = false;
+        let screen = render(&mut a);
+        assert!(
+            screen.contains("off"),
+            "device list should flag it:\n{screen}"
+        );
+        assert!(screen.contains("disabled"));
+    }
+
+    #[test]
+    fn the_device_pane_shows_what_the_toggle_would_run() {
+        let mut a = app(Tab::Buttons);
+        a.focus = Focus::Devices;
+        let screen = render(&mut a);
+        assert!(screen.contains("xinput disable"), "{screen}");
+
+        a.devices[0].enabled = false;
+        let screen = render(&mut a);
+        assert!(screen.contains("xinput enable"), "{screen}");
+    }
+
+    #[test]
+    fn help_lists_the_on_off_key() {
+        let mut a = app(Tab::Buttons);
+        a.modal = Some(Modal::Help);
+        let screen = render(&mut a);
+        assert!(screen.contains("turn the selected device off or on"));
     }
 
     #[test]

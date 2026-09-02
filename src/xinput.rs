@@ -259,6 +259,32 @@ pub fn set_prop_command(name: &str, prop: &str, values: &[String]) -> String {
     )
 }
 
+/// Whether the X server is currently sending this device's events anywhere.
+/// A disabled device stays listed and keeps its settings; it simply stops
+/// reaching applications, which is what "turn the touchpad off" means here.
+pub fn is_enabled(props: &[Prop]) -> bool {
+    props
+        .iter()
+        .find(|p| p.name == "Device Enabled")
+        .and_then(|p| match &p.value {
+            PropValue::Numbers(v) => v.first().map(|s| s == "1"),
+            PropValue::Opaque(_) => None,
+        })
+        // Absent means we cannot tell, and treating a device as enabled is the
+        // reading that matches what the user sees.
+        .unwrap_or(true)
+}
+
+pub fn set_enabled(id: u32, enabled: bool) -> Result<()> {
+    let action = if enabled { "enable" } else { "disable" };
+    run(&[action, &id.to_string()]).map(|_| ())
+}
+
+pub fn set_enabled_command(name: &str, enabled: bool) -> String {
+    let action = if enabled { "enable" } else { "disable" };
+    format!("xinput {action} \"{name}\"")
+}
+
 /// The `/dev/input/eventN` node backing a device, used to find its sysfs home.
 pub fn device_node(props: &[Prop]) -> Option<String> {
     props
@@ -376,6 +402,36 @@ mod tests {
         let props = parse_props(PROPS);
         let node = props.iter().find(|p| p.name == "Device Node").unwrap();
         assert!(matches!(node.value, PropValue::Opaque(_)));
+    }
+
+    #[test]
+    fn reads_the_enabled_flag() {
+        assert!(is_enabled(&parse_props(PROPS)));
+    }
+
+    #[test]
+    fn reads_a_disabled_device_as_disabled() {
+        let disabled = PROPS.replace("Device Enabled (176):\t1", "Device Enabled (176):\t0");
+        assert!(!is_enabled(&parse_props(&disabled)));
+    }
+
+    #[test]
+    fn a_device_without_the_flag_counts_as_enabled() {
+        // Better to show a device as on and let the toggle correct it than to
+        // claim something is off when we simply could not tell.
+        assert!(is_enabled(&[]));
+    }
+
+    #[test]
+    fn renders_the_enable_and_disable_commands() {
+        assert_eq!(
+            set_enabled_command("SynPS/2 Synaptics TouchPad", false),
+            "xinput disable \"SynPS/2 Synaptics TouchPad\""
+        );
+        assert_eq!(
+            set_enabled_command("SynPS/2 Synaptics TouchPad", true),
+            "xinput enable \"SynPS/2 Synaptics TouchPad\""
+        );
     }
 
     #[test]

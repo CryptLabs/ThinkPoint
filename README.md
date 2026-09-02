@@ -27,6 +27,12 @@ middle-click pasting the primary selection. TrackPoint scrolling survives that:
 libinput consumes the button for scrolling before the X button map is applied,
 and scroll travels as buttons 4–7.
 
+**Turning a device off.** Press `t` to disable the selected device, `t` again
+to bring it back — the usual reason being a touchpad you keep brushing while
+typing. It takes effect at once, leaves every other setting on the device
+untouched, and is remembered in the profile so `--restore` can switch it off
+again next session.
+
 **libinput properties.** Acceleration, natural scrolling, middle-button
 emulation and whatever else the driver exposes on a given device, edited in
 place rather than looked up in `xinput list-props` output.
@@ -81,6 +87,7 @@ prints the `sudo` command you need.
 | `tab` / `shift-tab` | cycle Buttons · libinput · sysfs |
 | `space` | toggle: disable a button, flip an on/off setting |
 | `e` | type a value |
+| `t` | turn the selected device off or on |
 | `p` | stage the drift-reducing preset on this device |
 | `m` | measure drift with your hands off the machine |
 | `a` | apply everything staged in this section |
@@ -139,8 +146,9 @@ The generated file includes a commented, narrower variant matched on
 `firmware_id`, for machines where more than one psmouse device is on the bus and
 the broad match is not what you want.
 
-**Button maps and libinput properties belong to the X server**, and udev cannot
-reach them. Those go to `~/.config/thinkpoint/profile.conf`, replayed with:
+**Button maps, libinput properties and the on/off state belong to the X
+server**, and udev cannot reach them. Those go to
+`~/.config/thinkpoint/profile.conf`, replayed with:
 
 ```sh
 thinkpoint --restore
@@ -166,6 +174,10 @@ thinkpoint --print-profile  print the saved X profile
 `--print-rule` emits every tunable attribute it can see with its current value,
 so you can trim it by hand; the rule written from inside the tool contains only
 what you changed.
+
+A disabled device keeps its settings and stays in the list, struck through and
+marked `off`; it just stops reaching applications. Nothing about it is
+destructive, and `t` undoes it.
 
 Wayland: the sysfs tab works, everything X11-side does not. There is no
 equivalent of a per-device button map to configure from outside the compositor.

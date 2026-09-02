@@ -65,8 +65,9 @@ USAGE:
     thinkpoint --version       version
 
 WHAT IT TOUCHES:
-    Button maps and libinput properties go through xinput and last until the
-    session ends; --restore replays them, so it suits an autostart line.
+    Button maps, libinput properties and whether a device is enabled at all
+    go through xinput and last until the session ends; --restore replays them,
+    so it suits an autostart line.
 
     TrackPoint and psmouse knobs live in /sys and need root to write. The
     interface offers a udev rule so they survive a reboot and, unlike a
@@ -110,6 +111,10 @@ fn restore() -> Result<()> {
             );
             continue;
         };
+        if let Some(enabled) = setting.enabled {
+            xinput::set_enabled(device.id, enabled)?;
+            applied += 1;
+        }
         if let Some(map) = &setting.button_map {
             xinput::set_button_map(device.id, map)?;
             applied += 1;
@@ -168,6 +173,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('?') => app.modal = Some(Modal::Help),
         KeyCode::Char('d') => app.open_detector(),
         KeyCode::Char('m') => app.open_meter(),
+        KeyCode::Char('t') => app.toggle_device_enabled(),
         KeyCode::Char('p') => app.apply_drift_preset(),
         KeyCode::Char('s') => app.open_persist(),
         KeyCode::Char('r') => app.refresh(),

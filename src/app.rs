@@ -118,6 +118,10 @@ pub struct Device {
     pub original_buttons: Vec<u8>,
     pub props: Vec<PropRow>,
     pub sysfs: Option<Node>,
+    /// Whether the X server is currently delivering this device's events.
+    pub enabled: bool,
+    /// State at start-up, so the profile only carries deliberate changes.
+    pub originally_enabled: bool,
     /// Set when a device could be listed but not fully interrogated.
     pub note: Option<String>,
 }
@@ -145,6 +149,10 @@ impl Device {
 
     pub fn dirty(&self) -> bool {
         self.buttons_dirty() || self.props_dirty() || self.sysfs_dirty()
+    }
+
+    pub fn enabled_customised(&self) -> bool {
+        self.enabled != self.originally_enabled
     }
 }
 
@@ -219,6 +227,7 @@ impl App {
                         if let Some(n) = &node {
                             claimed.push(n.path.clone());
                         }
+                        let enabled = xinput::is_enabled(&all_props);
                         let props: Vec<PropRow> = all_props
                             .into_iter()
                             .filter(xinput::is_interesting)
@@ -235,6 +244,8 @@ impl App {
                             original_buttons: buttons,
                             props,
                             sysfs: node,
+                            enabled,
+                            originally_enabled: enabled,
                             x: Some(x),
                         });
                     }
@@ -259,6 +270,8 @@ impl App {
                 original_buttons: Vec::new(),
                 props: Vec::new(),
                 sysfs: Some(node),
+                enabled: true,
+                originally_enabled: true,
                 note: Some("sysfs only — not matched to an X device".to_string()),
             });
         }
@@ -678,9 +691,14 @@ impl App {
         self.devices
             .iter()
             .filter(|d| d.x.is_some())
-            .filter(|d| d.buttons_customised() || d.props.iter().any(|p| p.is_customised()))
+            .filter(|d| {
+                d.buttons_customised()
+                    || d.enabled_customised()
+                    || d.props.iter().any(|p| p.is_customised())
+            })
             .map(|d| XSetting {
                 device: d.name.clone(),
+                enabled: d.enabled_customised().then_some(d.enabled),
                 button_map: d.buttons_customised().then(|| d.pending_buttons.clone()),
                 props: d
                     .props
@@ -744,6 +762,40 @@ impl App {
             Ok(d) => {
                 self.modal = Some(Modal::Detect(Box::new(d)));
                 self.say("Click a button to see which device sends it", Level::Info);
+            }
+            Err(e) => self.say(e.to_string(), Level::Bad),
+        }
+    }
+
+    /// Turn the selected device off or on.
+    ///
+    /// Unlike the value editors this applies immediately: it is one call, it is
+    /// undone by the same key, and staging a device's existence would be a
+    /// strange thing to make someone confirm. Disabling leaves every other
+    /// setting on the device untouched.
+    pub fn toggle_device_enabled(&mut self) {
+        let index = self.sel_device;
+        let Some(id) = self.devices[index].id() else {
+            self.say(
+                "This row has no X device, so there is nothing to enable or disable",
+                Level::Bad,
+            );
+            return;
+        };
+        let target = !self.devices[index].enabled;
+
+        match xinput::set_enabled(id, target) {
+            Ok(()) => {
+                self.devices[index].enabled = target;
+                let name = self.devices[index].name.clone();
+                if target {
+                    self.say(format!("{name} enabled"), Level::Good);
+                } else {
+                    self.say(
+                        format!("{name} disabled — press t again to bring it back"),
+                        Level::Warn,
+                    );
+                }
             }
             Err(e) => self.say(e.to_string(), Level::Bad),
         }
@@ -887,6 +939,8 @@ mod tests {
             pending_buttons: vec![1, 2, 3],
             original_buttons: vec![1, 2, 3],
             props: Vec::new(),
+            enabled: true,
+            originally_enabled: true,
             sysfs: (!attrs.is_empty()).then(|| Node {
                 path: PathBuf::from("/sys/devices/platform/i8042/serio1"),
                 description: String::new(),
@@ -988,6 +1042,44 @@ mod tests {
         a.apply_drift_preset();
         assert_eq!(a.status.level, Level::Warn);
         assert!(a.status.text.contains("Already at or below"));
+    }
+
+    #[test]
+    fn a_disabled_device_is_carried_into_the_profile() {
+        let mut a = app(vec![attr("sensitivity", "128", AttrKind::Range(0, 255))]);
+        a.devices[0].x = Some(crate::xinput::XDevice {
+            id: 12,
+            name: "SynPS/2 Synaptics TouchPad".into(),
+            kind: crate::xinput::Kind::SlavePointer,
+        });
+        a.devices[0].name = "SynPS/2 Synaptics TouchPad".into();
+
+        assert!(a.x_settings().is_empty(), "nothing customised yet");
+
+        // Simulate the toggle having gone through, without invoking xinput.
+        a.devices[0].enabled = false;
+        let settings = a.x_settings();
+        assert_eq!(settings.len(), 1);
+        assert_eq!(settings[0].enabled, Some(false));
+    }
+
+    #[test]
+    fn a_device_left_enabled_is_not_carried_into_the_profile() {
+        let mut a = app(vec![attr("sensitivity", "128", AttrKind::Range(0, 255))]);
+        a.devices[0].x = Some(crate::xinput::XDevice {
+            id: 12,
+            name: "Some Mouse".into(),
+            kind: crate::xinput::Kind::SlavePointer,
+        });
+        assert!(a.x_settings().is_empty());
+    }
+
+    #[test]
+    fn toggling_a_row_with_no_x_device_says_why() {
+        let mut a = app(vec![attr("sensitivity", "128", AttrKind::Range(0, 255))]);
+        a.toggle_device_enabled();
+        assert_eq!(a.status.level, Level::Bad);
+        assert!(a.status.text.contains("no X device"));
     }
 
     #[test]

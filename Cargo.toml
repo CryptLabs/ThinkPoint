@@ -1,0 +1,19 @@
+[package]
+name = "thinkpoint"
+version = "0.1.0"
+edition = "2024"
+description = "TUI for TrackPoint tuning, pointer button maps and libinput properties"
+license = "MIT"
+repository = "https://github.com/CryptLabs/ThinkPoint"
+readme = "README.md"
+keywords = ["trackpoint", "thinkpad", "xinput", "libinput", "tui"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+ratatui = "0.30.2"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -43,6 +43,12 @@ that really sent it. The physical buttons under a TrackPoint often belong to the
 touchpad, and remapping the wrong device fails silently in a way that looks like
 the remap simply did not work.
 
+**A drift meter.** Press `m`, take your hands off the machine, and read the
+pointer creep in counts per second per axis, straight from the device's own
+valuators — before pointer acceleration, so the figure describes the hardware
+rather than what the cursor did. A still reading with a visibly creeping cursor
+means the cause is above the driver.
+
 Every screen shows the equivalent shell command for whatever is selected, so the
 tool teaches rather than hides.
 
@@ -75,6 +81,8 @@ prints the `sudo` command you need.
 | `tab` / `shift-tab` | cycle Buttons · libinput · sysfs |
 | `space` | toggle: disable a button, flip an on/off setting |
 | `e` | type a value |
+| `p` | stage the drift-reducing preset on this device |
+| `m` | measure drift with your hands off the machine |
 | `a` | apply everything staged in this section |
 | `u` | reset the button map to how it was at start-up |
 | `s` | save — udev rule for sysfs, profile for X settings |
@@ -84,6 +92,28 @@ prints the `sudo` command you need.
 
 Changes are staged and applied with `a`, so nothing moves under you while you
 are looking at it. Nothing is written to disk except from the `s` screen.
+
+## On drift
+
+Pressing `p` stages the two things the kernel can do about TrackPoint drift:
+
+- `sensitivity` drops to three quarters of its current value, floored at 40.
+  This does not stop the underlying creep. It scales down the motion that the
+  same spurious force produces, which is usually enough to stop it being
+  noticeable, and below 40 the stick gets unusable well before the drift stops
+  mattering.
+- `drift_time` rises to 20 — but only where the device has one.
+
+That caveat is the whole story on most recent ThinkPads. `drift_time` is the
+actual drift-correction window, and the kernel's trackpoint driver only exposes
+it for genuine IBM TrackPoints; Elan, ALPS and NXP variants get `sensitivity`
+and `press_to_select` and nothing else. On those, drift correction happens in
+firmware where nothing in userspace can reach it. The status bar says so rather
+than implying the preset did more than it did, and what remains is the physical
+side: reseat or replace the cap, and check for a BIOS update, since Lenovo has
+shipped TrackPoint calibration fixes that way.
+
+Use `m` before and after to see whether any of it helped.
 
 ## Making it stick
 

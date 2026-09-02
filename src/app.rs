@@ -1,6 +1,6 @@
 //! Application state and the actions the key bindings drive.
 
-use crate::detect::Detector;
+use crate::detect::{Detector, Meter};
 use crate::error::{Error, Result};
 use crate::persist::{self, XSetting};
 use crate::sysfs::{self, Node, WriteVia};
@@ -151,6 +151,7 @@ impl Device {
 pub enum Modal {
     Help,
     Detect(Box<Detector>),
+    Meter(Box<Meter>),
     Persist {
         rule: String,
         profile: String,
@@ -748,6 +749,94 @@ impl App {
         }
     }
 
+    pub fn open_meter(&mut self) {
+        if !self.x11 {
+            self.say("Needs xinput, which is not available here", Level::Bad);
+            return;
+        }
+        match Meter::start() {
+            Ok(m) => {
+                self.modal = Some(Modal::Meter(Box::new(m)));
+                self.say("Take your hands off the machine and watch", Level::Info);
+            }
+            Err(e) => self.say(e.to_string(), Level::Bad),
+        }
+    }
+
+    // ---- Drift preset ---------------------------------------------------
+
+    /// Stage the settings that reduce drift, and say plainly which of them this
+    /// device can actually take.
+    ///
+    /// Lowering `sensitivity` does not stop the underlying creep — it scales
+    /// the motion the same spurious force produces, which is usually enough to
+    /// stop it being noticeable. `drift_time` is the real correction knob, and
+    /// the kernel only exposes it on IBM TrackPoints, so on an Elan, ALPS or
+    /// NXP stick there is nothing here to tune and the honest answer is to say
+    /// so rather than to pretend the preset did more than it did.
+    pub fn apply_drift_preset(&mut self) {
+        let index = self.sel_device;
+        let Some(node) = self.devices[index].sysfs.as_mut() else {
+            self.say(
+                "No sysfs node on this device, so no kernel-side drift settings",
+                Level::Bad,
+            );
+            return;
+        };
+
+        let mut staged: Vec<String> = Vec::new();
+        let mut had_sensitivity = false;
+
+        for attr in node.attrs.iter_mut() {
+            match attr.name.as_str() {
+                "sensitivity" => {
+                    had_sensitivity = true;
+                    let current = attr.as_int().unwrap_or(128);
+                    // Three quarters, floored at 40: below that the stick gets
+                    // unusable well before the drift stops mattering.
+                    let target = ((current * 3) / 4).max(40);
+                    if target != current {
+                        attr.pending = target.to_string();
+                        staged.push(format!("sensitivity {current} → {target}"));
+                    }
+                }
+                "drift_time" => {
+                    let current = attr.as_int().unwrap_or(5);
+                    if current < 20 {
+                        attr.pending = "20".to_string();
+                        staged.push(format!("drift_time {current} → 20"));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let has_drift_time = node.attrs.iter().any(|a| a.name == "drift_time");
+        self.tab = Tab::Sysfs;
+        self.focus = Focus::Detail;
+
+        if staged.is_empty() {
+            let why = if had_sensitivity {
+                "Already at or below the preset's values"
+            } else {
+                "This device exposes no drift-related attributes"
+            };
+            self.say(why, Level::Warn);
+            return;
+        }
+
+        let note = if has_drift_time {
+            String::new()
+        } else {
+            "  ·  no drift_time on this device, so firmware drift correction cannot be tuned"
+                .to_string()
+        };
+        self.say(
+            format!("Staged: {}{note}  ·  press a to apply", staged.join(", ")),
+            Level::Good,
+        );
+    }
+
     pub fn device_name_for_id(&self, id: u32) -> String {
         self.devices
             .iter()
@@ -768,5 +857,144 @@ impl App {
             }
             Err(e) => self.say(e.to_string(), Level::Bad),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sysfs::{Attr, AttrKind, Node};
+    use std::path::PathBuf;
+
+    fn attr(name: &str, value: &str, kind: AttrKind) -> Attr {
+        Attr {
+            name: name.to_string(),
+            help: "",
+            kind,
+            value: value.to_string(),
+            original: value.to_string(),
+            pending: value.to_string(),
+            writable_directly: false,
+            path: PathBuf::from("/sys/devices/platform/i8042/serio1").join(name),
+        }
+    }
+
+    fn device(attrs: Vec<Attr>) -> Device {
+        Device {
+            x: None,
+            name: "TPPS/2 Elan TrackPoint".into(),
+            buttons: vec![1, 2, 3],
+            pending_buttons: vec![1, 2, 3],
+            original_buttons: vec![1, 2, 3],
+            props: Vec::new(),
+            sysfs: (!attrs.is_empty()).then(|| Node {
+                path: PathBuf::from("/sys/devices/platform/i8042/serio1"),
+                description: String::new(),
+                firmware_id: String::new(),
+                attrs,
+            }),
+            note: None,
+        }
+    }
+
+    fn app(attrs: Vec<Attr>) -> App {
+        App {
+            devices: vec![device(attrs)],
+            sel_device: 0,
+            sel_button: 0,
+            sel_prop: 0,
+            sel_attr: 0,
+            focus: Focus::Devices,
+            tab: Tab::Buttons,
+            modal: None,
+            status: Status::default(),
+            should_quit: false,
+            x11: true,
+        }
+    }
+
+    fn pending(app: &App, name: &str) -> Option<String> {
+        app.device()
+            .sysfs
+            .as_ref()?
+            .attrs
+            .iter()
+            .find(|a| a.name == name)
+            .map(|a| a.pending.clone())
+    }
+
+    #[test]
+    fn drift_preset_lowers_sensitivity_by_a_quarter() {
+        let mut a = app(vec![attr("sensitivity", "128", AttrKind::Range(0, 255))]);
+        a.apply_drift_preset();
+        assert_eq!(pending(&a, "sensitivity").as_deref(), Some("96"));
+        assert_eq!(a.status.level, Level::Good);
+    }
+
+    #[test]
+    fn drift_preset_stops_before_the_stick_becomes_unusable() {
+        let mut a = app(vec![attr("sensitivity", "45", AttrKind::Range(0, 255))]);
+        a.apply_drift_preset();
+        assert_eq!(pending(&a, "sensitivity").as_deref(), Some("40"));
+    }
+
+    #[test]
+    fn drift_preset_raises_drift_time_where_the_device_has_one() {
+        let mut a = app(vec![
+            attr("sensitivity", "128", AttrKind::Range(0, 255)),
+            attr("drift_time", "5", AttrKind::Range(0, 255)),
+        ]);
+        a.apply_drift_preset();
+        assert_eq!(pending(&a, "drift_time").as_deref(), Some("20"));
+        assert!(!a.status.text.contains("no drift_time"));
+    }
+
+    #[test]
+    fn drift_preset_says_so_when_there_is_no_drift_time() {
+        // The Elan case: sensitivity is the only lever the kernel offers.
+        let mut a = app(vec![attr("sensitivity", "128", AttrKind::Range(0, 255))]);
+        a.apply_drift_preset();
+        assert!(
+            a.status.text.contains("no drift_time on this device"),
+            "should not imply it tuned something it cannot: {}",
+            a.status.text
+        );
+    }
+
+    #[test]
+    fn drift_preset_stages_rather_than_writes() {
+        let mut a = app(vec![attr("sensitivity", "128", AttrKind::Range(0, 255))]);
+        a.apply_drift_preset();
+        let node = a.device().sysfs.as_ref().unwrap();
+        let sensitivity = &node.attrs[0];
+        assert!(sensitivity.is_dirty(), "staged");
+        assert_eq!(
+            sensitivity.value, "128",
+            "kernel value untouched until apply"
+        );
+        assert!(a.status.text.contains("press a to apply"));
+    }
+
+    #[test]
+    fn drift_preset_moves_you_to_the_tab_showing_the_change() {
+        let mut a = app(vec![attr("sensitivity", "128", AttrKind::Range(0, 255))]);
+        a.apply_drift_preset();
+        assert_eq!(a.tab, Tab::Sysfs);
+    }
+
+    #[test]
+    fn drift_preset_is_idempotent_at_the_floor() {
+        let mut a = app(vec![attr("sensitivity", "40", AttrKind::Range(0, 255))]);
+        a.apply_drift_preset();
+        assert_eq!(a.status.level, Level::Warn);
+        assert!(a.status.text.contains("Already at or below"));
+    }
+
+    #[test]
+    fn drift_preset_on_a_device_without_sysfs_explains_itself() {
+        let mut a = app(Vec::new());
+        a.apply_drift_preset();
+        assert_eq!(a.status.level, Level::Bad);
+        assert!(a.status.text.contains("No sysfs node"));
     }
 }

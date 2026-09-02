@@ -442,7 +442,7 @@ fn draw_keys(frame: &mut Frame, app: &App, area: Rect) {
     let keys = if app.modal.is_some() {
         "esc close"
     } else {
-        "↑↓ move · ←→ adjust · tab section · space toggle · a apply · s save · d detect · ? help · q quit"
+        "↑↓ move · ←→ adjust · tab section · space toggle · a apply · p drift · m meter · s save · ? help · q quit"
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
@@ -476,13 +476,16 @@ fn draw_modal(frame: &mut Frame, app: &mut App) {
     let area = centered(frame.area(), 74, 74);
     frame.render_widget(Clear, area);
 
-    // Drain the detector channel before anything takes an immutable borrow.
-    if let Some(Modal::Detect(detector)) = app.modal.as_mut() {
-        detector.poll();
+    // Drain the event channels before anything takes an immutable borrow.
+    match app.modal.as_mut() {
+        Some(Modal::Detect(detector)) => detector.poll(),
+        Some(Modal::Meter(meter)) => meter.poll(),
+        _ => {}
     }
 
     let (title, body): (String, Vec<Line>) = match app.modal.as_ref() {
         Some(Modal::Help) => ("Keys".to_string(), help_lines()),
+        Some(Modal::Meter(meter)) => ("Drift meter".to_string(), meter_lines(app, meter)),
         Some(Modal::Detect(detector)) => {
             let mut lines = vec![
                 Line::from(Span::styled(
@@ -606,6 +609,97 @@ fn draw_modal(frame: &mut Frame, app: &mut App) {
     );
 }
 
+fn meter_lines<'a>(app: &App, meter: &crate::detect::Meter) -> Vec<Line<'a>> {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "Hands off the machine. Movement reported with nothing touching the \
+             device is real drift; a still reading means what you are seeing \
+             comes from pointer acceleration rather than the hardware.",
+            Style::default().fg(Color::Gray),
+        )),
+        Line::from(""),
+    ];
+
+    let readings = meter.readings();
+    let elapsed = meter.started.elapsed().as_secs_f64();
+
+    if elapsed < 1.0 {
+        lines.push(Line::from(Span::styled(
+            "settling…",
+            Style::default().fg(DIM),
+        )));
+        return lines;
+    }
+
+    if readings.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No movement at all in the last few seconds.",
+            Style::default().fg(Color::Green),
+        )));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "If the pointer still creeps on screen, the cause is above the \
+             driver — check the accel profile on the libinput tab.",
+            Style::default().fg(DIM),
+        )));
+        return lines;
+    }
+
+    lines.push(Line::from(Span::styled(
+        format!(
+            "{:<30}{:>9}{:>9}{:>9}{:>8}   verdict",
+            "device", "x /sec", "y /sec", "total", "events"
+        ),
+        Style::default().fg(DIM),
+    )));
+
+    for reading in &readings {
+        let colour = match reading.magnitude() {
+            m if m < 0.5 => Color::Green,
+            m if m < 5.0 => PENDING,
+            _ => OFF,
+        };
+        let mut name = app.device_name_for_id(reading.device_id);
+        if name.chars().count() > 28 {
+            name = name.chars().take(27).collect::<String>() + "…";
+        }
+        lines.push(Line::from(vec![
+            Span::styled(format!("{name:<30}"), Style::default().fg(Color::Gray)),
+            Span::styled(
+                format!(
+                    "{:>9.1}{:>9.1}{:>9.1}{:>8}",
+                    reading.dx_per_sec,
+                    reading.dy_per_sec,
+                    reading.magnitude(),
+                    reading.events
+                ),
+                Style::default().fg(colour).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("   {}", reading.verdict()),
+                Style::default().fg(colour),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Counts per second over a five-second window, straight from the \
+         device's own valuators — before pointer acceleration, so the numbers \
+         describe the hardware rather than what the cursor did.",
+        Style::default().fg(DIM),
+    )));
+
+    if let Some(msg) = &meter.ended {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            msg.clone(),
+            Style::default().fg(OFF),
+        )));
+    }
+    lines
+}
+
 fn help_lines() -> Vec<Line<'static>> {
     let rows = [
         ("↑ ↓ / j k", "move within the focused pane"),
@@ -615,8 +709,10 @@ fn help_lines() -> Vec<Line<'static>> {
         ("e", "type a value for the selected setting"),
         ("a", "apply everything staged in this section"),
         ("u", "reset the button map to how it was at start-up"),
+        ("p", "stage the drift-reducing preset on this device"),
         ("s", "save — udev rule for sysfs, profile for X settings"),
         ("d", "detect which device sends a button press"),
+        ("m", "measure drift with your hands off the machine"),
         ("r", "re-read everything from the system"),
         ("q / esc", "quit"),
     ];
@@ -640,6 +736,15 @@ fn help_lines() -> Vec<Line<'static>> {
         "Disabling button 2 stops middle-click paste while leaving TrackPoint \
          scrolling intact: libinput consumes the button for scrolling before \
          the X button map is applied, and scroll events travel as buttons 4–7.",
+        Style::default().fg(DIM),
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "On drift: the preset lowers sensitivity, which scales down the motion \
+         a spurious force produces, and raises drift_time where the device has \
+         one. Only IBM TrackPoints do. On an Elan, ALPS or NXP stick the \
+         firmware handles drift correction and nothing here can change it — \
+         that leaves the cap and a BIOS update.",
         Style::default().fg(DIM),
     )));
     lines
@@ -789,6 +894,27 @@ mod tests {
         let screen = render(&mut a);
         assert!(screen.contains("/etc/udev/rules.d/70-thinkpoint.rules"));
         assert!(screen.contains("ATTR{sensitivity}"));
+    }
+
+    #[test]
+    fn help_lists_the_drift_keys() {
+        let mut a = app(Tab::Buttons);
+        a.modal = Some(Modal::Help);
+        let screen = render(&mut a);
+        assert!(screen.contains("drift-reducing preset"));
+        assert!(screen.contains("measure drift"));
+    }
+
+    #[test]
+    fn the_drift_preset_reports_what_it_could_not_tune() {
+        // No drift_time in this fixture, matching an Elan TrackPoint.
+        let mut a = app(Tab::Sysfs);
+        a.apply_drift_preset();
+        let screen = render(&mut a);
+        assert!(
+            screen.contains("no drift_time"),
+            "the status bar should be honest about the limit:\n{screen}"
+        );
     }
 
     #[test]

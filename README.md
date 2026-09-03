@@ -1,10 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)"
-            srcset="https://raw.githubusercontent.com/CryptLabs/ThinkPoint/main/assets/wordmark-dark.png">
-    <img alt="ThinkPoint"
-         src="https://raw.githubusercontent.com/CryptLabs/ThinkPoint/main/assets/wordmark-light.png"
-         width="420">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/wordmark-dark.png">
+    <img alt="ThinkPoint" src="assets/wordmark-light.png" width="420">
   </picture>
 </p>
 

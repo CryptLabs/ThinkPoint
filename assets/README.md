@@ -29,6 +29,19 @@ GitHub will not pick this up on its own. Upload it by hand:
 Without that, links to the repository show a generic card with your avatar on
 it.
 
+## Paths in the README
+
+The header uses **relative** paths, which GitHub resolves against the
+repository. That is what makes it render while the repository is private —
+`raw.githubusercontent.com` URLs are not fetchable anonymously, so GitHub's
+image proxy cannot load them and the header comes out broken.
+
+The cost is crates.io, which cannot resolve relative paths and will show a
+broken image on the package page. If that matters more than the private-repo
+case, swap both paths for
+`https://raw.githubusercontent.com/CryptLabs/ThinkPoint/main/assets/...` once
+the repository is public.
+
 ## Colours
 
 | | |

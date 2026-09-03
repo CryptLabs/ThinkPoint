@@ -14,6 +14,25 @@ categories = ["command-line-utilities"]
 [dependencies]
 ratatui = "0.30.2"
 
+# Debian packaging, used by cargo-deb in the release workflow. The binary is
+# picked up automatically; these are the parts it cannot infer.
+[package.metadata.deb]
+section = "utils"
+priority = "optional"
+depends = "$auto, sudo"
+recommends = "xinput"
+extended-description = """
+Terminal interface for Linux pointer devices: TrackPoint sensitivity and the
+other kernel-side knobs, per-device button maps, libinput properties, a drift
+meter, and persistence through a udev rule and a replayable profile.
+Requires an X11 session for the device-side features.
+"""
+assets = [
+    ["target/release/thinkpoint", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/thinkpoint/README.md", "644"],
+    ["CHANGELOG.md", "usr/share/doc/thinkpoint/CHANGELOG.md", "644"],
+]
+
 [profile.release]
 strip = true
 lto = true

@@ -67,13 +67,39 @@ tool teaches rather than hides.
 
 ## Install
 
-From the AUR:
+Nothing here is Arch-specific. It is one Rust binary that shells out to
+`xinput` and `sudo`.
+
+**Prebuilt binary** — from the [releases
+page](https://github.com/CryptLabs/ThinkPoint/releases), for any distribution:
+
+```sh
+tar xzf thinkpoint-*-x86_64-unknown-linux-gnu.tar.gz
+install -Dm755 thinkpoint-*/thinkpoint ~/.local/bin/thinkpoint
+```
+
+x86_64 and aarch64 builds are published on each tag, with `SHA256SUMS`
+alongside them.
+
+**Cargo**, on any distribution with a Rust toolchain:
+
+```sh
+cargo install thinkpoint
+```
+
+**Arch and derivatives:**
 
 ```sh
 yay -S thinkpoint
 ```
 
-From source:
+**Debian and Ubuntu** — a `.deb` is attached to each release:
+
+```sh
+sudo apt install ./thinkpoint_*_amd64.deb
+```
+
+**From source:**
 
 ```sh
 cargo build --release
@@ -83,6 +109,19 @@ install -Dm755 target/release/thinkpoint /usr/local/bin/thinkpoint
 Runtime dependencies: `xinput` for anything X11-side and `sudo` for writing
 sysfs and udev files. Without `xinput` the tool falls back to sysfs-only
 tuning.
+
+## Platform
+
+Linux only, and X11 for most of it.
+
+The device-side features — button maps, libinput properties, the on/off
+toggle, the detector and the drift meter — all go through the X server. Under
+Wayland the sysfs tab still works, because that talks to the kernel, but
+nothing else does: there is no equivalent of a per-device button map to
+configure from outside the compositor.
+
+The sysfs tuning is Linux-specific by nature, so there is no BSD or macOS
+build.
 
 ## Keys
 

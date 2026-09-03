@@ -9,6 +9,9 @@ version is 0, a minor bump may still change behaviour.
 
 ### Added
 
+- Release workflow: tagging builds x86_64 and aarch64 tarballs and a Debian
+  package, publishes them with checksums, and takes the release notes from
+  this file.
 - About screen (`i`): logo, version, author, website, source and licence, plus
   what the current session found — xinput availability, device counts and
   whether sudo will prompt.

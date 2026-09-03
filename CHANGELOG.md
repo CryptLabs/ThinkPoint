@@ -9,6 +9,10 @@ version is 0, a minor bump may still change behaviour.
 
 ### Fixed
 
+- The PKGBUILD declares `gcc-libs` and `glibc`, which the binary links against
+  and which were previously satisfied only by accident, and moves `sudo` to
+  `optdepends` alongside `xinput` — neither is needed for the tool to run,
+  only for the parts that use them.
 - The PKGBUILD unpacked into the wrong directory. GitHub names its archive
   after the repository, which is capitalised, so the extracted directory is
   `ThinkPoint-0.2.0` rather than `thinkpoint-0.2.0` and every build stage would

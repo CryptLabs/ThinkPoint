@@ -9,9 +9,12 @@ pkgdesc="TUI for TrackPoint tuning, pointer button maps and libinput properties"
 arch=('x86_64' 'aarch64')
 url="https://github.com/CryptLabs/ThinkPoint"
 license=('MIT')
-depends=('sudo')
+# Declared rather than left to be pulled in transitively, which is what namcap
+# asks for and what the Rust packages in the official repositories do.
+depends=('gcc-libs' 'glibc')
 optdepends=(
   'xorg-xinput: button maps, libinput properties, the detector and the meter'
+  'sudo: writing sysfs values and the udev rule'
 )
 makedepends=('cargo')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")

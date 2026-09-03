@@ -12,6 +12,10 @@ use crate::error::{Error, Result};
 pub enum Kind {
     MasterPointer,
     SlavePointer,
+    /// Detached from any master. It still exists and can still be configured,
+    /// but it is not driving a cursor, and xinput does not say whether a
+    /// floating device is a pointer or a keyboard — that has to be inferred.
+    Floating,
     Other,
 }
 
@@ -119,7 +123,9 @@ pub(crate) fn parse_pointers(out: &str) -> Vec<XDevice> {
             continue;
         };
 
-        let kind = if type_field.contains("slave") && type_field.contains("pointer") {
+        let kind = if type_field.contains("floating") {
+            Kind::Floating
+        } else if type_field.contains("slave") && type_field.contains("pointer") {
             Kind::SlavePointer
         } else if type_field.contains("master") && type_field.contains("pointer") {
             Kind::MasterPointer
@@ -280,6 +286,25 @@ pub fn set_enabled(id: u32, enabled: bool) -> Result<()> {
     run(&[action, &id.to_string()]).map(|_| ())
 }
 
+/// Reattach a floating device to a master pointer, which is what makes it drive
+/// the cursor again. Without this a detached device is invisible to anything
+/// looking for slave pointers, and looks for all the world like it has gone.
+pub fn reattach(id: u32, master: u32) -> Result<()> {
+    run(&["reattach", &id.to_string(), &master.to_string()]).map(|_| ())
+}
+
+pub fn reattach_command(name: &str) -> String {
+    format!("xinput reattach \"{name}\" \"Virtual core pointer\"")
+}
+
+/// The master pointer to reattach to. There is normally exactly one.
+pub fn master_pointer(devices: &[XDevice]) -> Option<u32> {
+    devices
+        .iter()
+        .find(|d| d.kind == Kind::MasterPointer)
+        .map(|d| d.id)
+}
+
 /// Ask the X server directly rather than trusting a value cached at start-up.
 /// Anything can have changed it since — another tool, another session, or a
 /// previous run of this one.
@@ -431,6 +456,31 @@ mod tests {
         // Better to show a device as on and let the toggle correct it than to
         // claim something is off when we simply could not tell.
         assert!(is_enabled(&[]));
+    }
+
+    #[test]
+    fn a_floating_device_is_still_listed() {
+        // A detached touchpad reports as "[floating slave]" — no "pointer" in
+        // the label at all — and was previously filtered out and invisible.
+        let list = "\u{239c}   \u{21b3} ELAN067A:00 04F3:3197 Touchpad          \tid=8\t[floating slave]\n";
+        let devices = parse_pointers(list);
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].id, 8);
+        assert_eq!(devices[0].kind, Kind::Floating);
+        assert_eq!(devices[0].name, "ELAN067A:00 04F3:3197 Touchpad");
+    }
+
+    #[test]
+    fn the_master_pointer_is_found_for_reattaching() {
+        assert_eq!(master_pointer(&parse_pointers(LIST)), Some(2));
+    }
+
+    #[test]
+    fn renders_the_reattach_command() {
+        assert_eq!(
+            reattach_command("ELAN067A:00 04F3:3197 Touchpad"),
+            "xinput reattach \"ELAN067A:00 04F3:3197 Touchpad\" \"Virtual core pointer\""
+        );
     }
 
     #[test]

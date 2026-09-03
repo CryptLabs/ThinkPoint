@@ -118,6 +118,9 @@ pub struct Device {
     pub original_buttons: Vec<u8>,
     pub props: Vec<PropRow>,
     pub sysfs: Option<Node>,
+    /// Detached from the master pointer: present and configurable, but not
+    /// driving the cursor.
+    pub floating: bool,
     /// Whether the X server is currently delivering this device's events.
     pub enabled: bool,
     /// State at start-up, so the profile only carries deliberate changes.
@@ -254,6 +257,8 @@ pub struct App {
     pub status: Status,
     pub should_quit: bool,
     pub x11: bool,
+    /// Master pointer to reattach floating devices to.
+    pub master_pointer: Option<u32>,
 }
 
 /// What a button number conventionally does, so the UI can explain itself.
@@ -278,12 +283,25 @@ impl App {
         let mut devices = Vec::new();
         let mut claimed: Vec<std::path::PathBuf> = Vec::new();
         let mut note = None;
+        let mut master: Option<u32> = None;
 
         if x11 {
             match xinput::list_pointers() {
                 Ok(list) => {
-                    for x in list.into_iter().filter(|d| d.kind == Kind::SlavePointer) {
-                        let buttons = xinput::get_button_map(x.id).unwrap_or_default();
+                    master = xinput::master_pointer(&list);
+                    for x in list
+                        .into_iter()
+                        .filter(|d| matches!(d.kind, Kind::SlavePointer | Kind::Floating))
+                    {
+                        // A floating device is not labelled pointer or keyboard,
+                        // so ask it for a button map: keyboards have none. This
+                        // keeps a detached touchpad in the list, where it can be
+                        // reattached, instead of vanishing.
+                        let button_map = xinput::get_button_map(x.id);
+                        if x.kind == Kind::Floating && button_map.is_err() {
+                            continue;
+                        }
+                        let buttons = button_map.unwrap_or_default();
                         let all_props = xinput::list_props(x.id).unwrap_or_default();
                         let node =
                             xinput::device_node(&all_props).and_then(|n| sysfs::node_for_event(&n));
@@ -297,11 +315,17 @@ impl App {
                             .map(PropRow::new)
                             .collect();
 
+                        let floating = x.kind == Kind::Floating;
                         devices.push(Device {
                             name: x.name.clone(),
-                            note: buttons
-                                .is_empty()
-                                .then(|| "no button map reported".to_string()),
+                            floating,
+                            note: if floating {
+                                Some("detached from the pointer — press t to reattach".to_string())
+                            } else {
+                                buttons
+                                    .is_empty()
+                                    .then(|| "no button map reported".to_string())
+                            },
                             buttons: buttons.clone(),
                             pending_buttons: buttons.clone(),
                             original_buttons: buttons,
@@ -344,6 +368,7 @@ impl App {
                 original_buttons: Vec::new(),
                 props: Vec::new(),
                 sysfs: Some(node),
+                floating: false,
                 enabled: true,
                 originally_enabled: true,
                 note: Some("sysfs only — not matched to an X device".to_string()),
@@ -376,6 +401,7 @@ impl App {
             status,
             should_quit: false,
             x11,
+            master_pointer: master,
         })
     }
 
@@ -909,6 +935,30 @@ impl App {
             return;
         };
 
+        // A detached device needs putting back before enabling means anything.
+        if self.devices[index].floating {
+            let Some(master) = self.master_pointer else {
+                self.say(
+                    "no master pointer to reattach to — run: xinput reattach <id> 2",
+                    Level::Bad,
+                );
+                return;
+            };
+            if let Err(e) = xinput::reattach(id, master) {
+                self.say(e.to_string(), Level::Bad);
+                return;
+            }
+            let _ = xinput::set_enabled(id, true);
+            self.devices[index].floating = false;
+            self.devices[index].enabled = true;
+            let name = self.devices[index].name.clone();
+            self.say(
+                format!("{name} reattached to the pointer and enabled"),
+                Level::Good,
+            );
+            return;
+        }
+
         // Read the live state rather than trusting what was cached at start-up.
         // If that value were stale — the device disabled by an earlier run, say
         // — the toggle would invert and appear to do nothing at all.
@@ -1196,6 +1246,7 @@ mod tests {
             pending_buttons: vec![1, 2, 3],
             original_buttons: vec![1, 2, 3],
             props: Vec::new(),
+            floating: false,
             enabled: true,
             originally_enabled: true,
             sysfs: (!attrs.is_empty()).then(|| Node {
@@ -1222,6 +1273,7 @@ mod tests {
             status: Status::default(),
             should_quit: false,
             x11: true,
+            master_pointer: Some(2),
         }
     }
 

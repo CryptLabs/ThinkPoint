@@ -91,13 +91,18 @@ fn draw_devices(frame: &mut Frame, app: &App, area: Rect) {
         .map(|d| {
             let mut spans = vec![Span::styled(
                 d.name.clone(),
-                if d.enabled {
+                if d.enabled && !d.floating {
                     Style::default()
                 } else {
                     Style::default().fg(DIM).add_modifier(Modifier::CROSSED_OUT)
                 },
             )];
-            if !d.enabled {
+            if d.floating {
+                spans.push(Span::styled(
+                    "  detached",
+                    Style::default().fg(PENDING).add_modifier(Modifier::BOLD),
+                ));
+            } else if !d.enabled {
                 spans.push(Span::styled(
                     "  off",
                     Style::default().fg(OFF).add_modifier(Modifier::BOLD),
@@ -140,7 +145,9 @@ fn draw_devices(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_detail(frame: &mut Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::Detail;
     let device = app.device();
-    let title = if device.enabled {
+    let title = if device.floating {
+        format!("{} — detached", device.name)
+    } else if device.enabled {
         device.name.clone()
     } else {
         format!("{} — disabled", device.name)
@@ -408,7 +415,11 @@ fn draw_hint(frame: &mut Frame, app: &App, area: Rect) {
     // With the device list focused, the action in reach is the on/off toggle,
     // so show that command rather than one from a tab you are not looking at.
     if app.focus == Focus::Devices && device.id().is_some() {
-        let text = crate::xinput::set_enabled_command(&device.name, !device.enabled);
+        let text = if device.floating {
+            crate::xinput::reattach_command(&device.name)
+        } else {
+            crate::xinput::set_enabled_command(&device.name, !device.enabled)
+        };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 text,
@@ -898,7 +909,7 @@ fn help_lines() -> Vec<Line<'static>> {
         ("e", "type a value for the selected setting"),
         ("a", "apply everything staged in this section"),
         ("u", "reset the button map to how it was at start-up"),
-        ("t", "turn the selected device off or on (applies at once)"),
+        ("t", "turn the device off or on, or reattach a detached one"),
         ("b", "middle button: choose paste and scroll independently"),
         ("p", "stage the drift-reducing preset on this device"),
         ("s", "save — udev rule for sysfs, profile for X settings"),
@@ -984,6 +995,7 @@ mod tests {
                 pending: vec!["0.000000".into()],
                 original: vec!["0.000000".into()],
             }],
+            floating: false,
             enabled: true,
             originally_enabled: true,
             sysfs: Some(Node {
@@ -1013,6 +1025,7 @@ mod tests {
             status: Status::default(),
             should_quit: false,
             x11: true,
+            master_pointer: Some(2),
         }
     }
 
@@ -1140,7 +1153,7 @@ mod tests {
         let mut a = app(Tab::Buttons);
         a.modal = Some(Modal::Help);
         let screen = render(&mut a);
-        assert!(screen.contains("turn the selected device off or on"));
+        assert!(screen.contains("turn the device off or on"));
     }
 
     #[test]
@@ -1200,6 +1213,26 @@ mod tests {
         }));
         let screen = render(&mut a);
         assert!(screen.contains("no scroll method on this device"));
+    }
+
+    #[test]
+    fn a_detached_device_is_shown_as_detached_not_hidden() {
+        // The failure this exists to prevent: a floating device dropping out of
+        // the list entirely, so there is no way to reattach it from here.
+        let mut a = app(Tab::Buttons);
+        a.devices[0].floating = true;
+        let screen = render(&mut a);
+        assert!(screen.contains("detached"), "{screen}");
+        assert!(screen.contains("TPPS/2 Elan TrackPoint"));
+    }
+
+    #[test]
+    fn a_detached_device_offers_the_reattach_command() {
+        let mut a = app(Tab::Buttons);
+        a.devices[0].floating = true;
+        a.focus = Focus::Devices;
+        let screen = render(&mut a);
+        assert!(screen.contains("xinput reattach"), "{screen}");
     }
 
     #[test]

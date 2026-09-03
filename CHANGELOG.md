@@ -7,6 +7,11 @@ version is 0, a minor bump may still change behaviour.
 
 ## [Unreleased]
 
+### Added
+
+- Detached (floating) devices are listed and can be reattached with `t`, which
+  reattaches to the master pointer and enables in one step.
+
 ### Fixed
 
 - Saving the udev rule no longer drops settings persisted in an earlier
@@ -17,6 +22,10 @@ version is 0, a minor bump may still change behaviour.
   persisted earlier and replayed by `--restore` reads back as the session's
   starting state, so saving something else afterwards would have dropped it.
   Settings for devices that are not connected today are kept as well.
+- A detached device no longer disappears from the list. `xinput list` labels a
+  floating device `[floating slave]`, with no mention of "pointer", so it was
+  filtered out along with keyboards and there was no way to recover it from the
+  interface.
 
 ## [0.2.0] — 2026-09-03
 

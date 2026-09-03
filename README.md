@@ -219,6 +219,13 @@ A disabled device keeps its settings and stays in the list, struck through and
 marked `off`; it just stops reaching applications. Nothing about it is
 destructive, and `t` undoes it.
 
+A device can also end up *detached* — floating, in X's terms, meaning attached
+to no master pointer and therefore driving no cursor. ThinkPoint shows those
+marked `detached`, and `t` reattaches and enables them in one go. This is worth
+knowing because `xinput list` labels a floating device `[floating slave]` with
+no mention of "pointer", so tools that look for slave pointers do not see it at
+all and it appears to have vanished.
+
 Wayland: the sysfs tab works, everything X11-side does not. There is no
 equivalent of a per-device button map to configure from outside the compositor.
 

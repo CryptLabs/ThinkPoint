@@ -84,7 +84,7 @@ fn print_rule() -> Result<()> {
     if nodes.is_empty() {
         eprintln!("thinkpoint: no serio devices with tunable attributes found");
     }
-    print!("{}", persist::udev_rule(&nodes, false));
+    print!("{}", persist::udev_rule(&nodes, false, None));
     Ok(())
 }
 

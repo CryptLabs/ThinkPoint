@@ -149,6 +149,10 @@ Use `m` before and after to see whether any of it helped.
 The two kinds of setting persist differently, because they live in different
 places.
 
+Applying with `a` changes the running system only. Nothing on the sysfs tab
+survives a reboot until you save it with `s` — that is the step that writes the
+udev rule.
+
 **sysfs attributes belong to the kernel**, so `s` generates a udev rule at
 `/etc/udev/rules.d/70-thinkpoint.rules`:
 
@@ -167,6 +171,14 @@ sudo udevadm trigger --subsystem-match=serio
 The generated file includes a commented, narrower variant matched on
 `firmware_id`, for machines where more than one psmouse device is on the bus and
 the broad match is not what you want.
+
+Saving reads the existing rule first and carries across anything it is not
+changing. That matters after a reboot: an attribute persisted last session
+reads back as the boot value, so it looks unchanged, and a naive regeneration
+would drop it while saving something else.
+
+Hand edits to the rule file survive too, as long as they are `ATTR{...}="..."`
+assignments on the live line.
 
 **Button maps, libinput properties and the on/off state belong to the X
 server**, and udev cannot reach them. Those go to

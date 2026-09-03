@@ -836,7 +836,10 @@ impl App {
             .iter()
             .filter_map(|d| d.sysfs.clone())
             .collect();
-        let rule = persist::udev_rule(&nodes, true);
+        // Read what is already persisted so this save adds to it rather than
+        // replacing it.
+        let existing = std::fs::read_to_string(persist::UDEV_PATH).ok();
+        let rule = persist::udev_rule(&nodes, true, existing.as_deref());
         let profile = persist::render_profile(&self.x_settings());
         self.modal = Some(Modal::Persist {
             rule,

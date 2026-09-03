@@ -5,6 +5,15 @@ Notable changes to ThinkPoint. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html) — while the major
 version is 0, a minor bump may still change behaviour.
 
+## [Unreleased]
+
+### Fixed
+
+- Saving the udev rule no longer drops settings persisted in an earlier
+  session. After a reboot, an attribute the rule had already set reads back as
+  the boot value and so looks unchanged; regenerating the rule for some other
+  setting would leave it out. The existing rule file is now read and merged.
+
 ## [0.2.0] — 2026-09-03
 
 ### Added

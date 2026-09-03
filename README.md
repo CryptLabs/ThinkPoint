@@ -9,6 +9,11 @@ A terminal interface for the pointer settings that normally live in scattered
 sysfs files and half-remembered `xinput` incantations — TrackPoint sensitivity,
 button maps, libinput properties — with a way to make each of them stick.
 
+It came out of two ThinkPad annoyances: a TrackPoint that drifts, and a middle
+button that pastes the selection when all you wanted was to scroll. There is a
+[section on drift](#fixing-trackpoint-drift) that walks through measuring it,
+what the kernel can actually change, and where the fix stops being software.
+
 Written for ThinkPads, but it works on any Linux machine with pointer devices.
 
 ```
@@ -167,27 +172,62 @@ minutes, one prompt usually covers a whole session of tinkering.
 There is no dependency on a polkit agent, which under a bare window manager is
 often not running at all.
 
-## On drift
+## Fixing TrackPoint drift
 
-Pressing `p` stages the two things the kernel can do about TrackPoint drift:
+Drift is the pointer creeping on its own with nothing touching the stick. It is
+the problem this program was written for, so it is worth being clear about what
+it can and cannot do.
+
+**First, find out whether it is really the hardware.** Press `m`, take your
+hands off the machine, and read the number. The meter reports movement per
+second per axis straight from the device's own valuators, before pointer
+acceleration, so it describes the stick rather than the cursor.
+
+- A reading of **zero while the cursor still creeps** means the drift is coming
+  from above the driver. The device is fine; look at the accel profile on the
+  libinput tab.
+- A **steady non-zero reading** is genuine device drift, and the rest of this
+  applies.
+
+**Then try the preset.** `p` stages the two things the kernel can do, `a`
+applies them:
 
 - `sensitivity` drops to three quarters of its current value, floored at 40.
-  This does not stop the underlying creep. It scales down the motion that the
-  same spurious force produces, which is usually enough to stop it being
-  noticeable, and below 40 the stick gets unusable well before the drift stops
-  mattering.
-- `drift_time` rises to 20 — but only where the device has one.
+  This does not stop the creep. It scales down the motion that the same
+  spurious force produces, which is often enough to stop it being noticeable.
+  Below 40 the stick gets unusable well before the drift stops mattering, which
+  is why the floor is there.
+- `drift_time` rises to 20 — the actual drift-correction window — **but only on
+  devices that have one.**
 
-That caveat is the whole story on most recent ThinkPads. `drift_time` is the
-actual drift-correction window, and the kernel's trackpoint driver only exposes
-it for genuine IBM TrackPoints; Elan, ALPS and NXP variants get `sensitivity`
-and `press_to_select` and nothing else. On those, drift correction happens in
-firmware where nothing in userspace can reach it. The status bar says so rather
-than implying the preset did more than it did, and what remains is the physical
-side: reseat or replace the cap, and check for a BIOS update, since Lenovo has
-shipped TrackPoint calibration fixes that way.
+Press `m` again. If the number has dropped and the stick still feels usable,
+you are done; save it with `s` so it survives a reboot. If sensitivity made no
+difference to the measured drift, the creep is not proportional to it and no
+amount of further lowering will help.
 
-Use `m` before and after to see whether any of it helped.
+**Where it runs out.** `drift_time` is exposed by the kernel's trackpoint
+driver only for genuine IBM TrackPoints. Elan, ALPS and NXP variants — which is
+most ThinkPads made in the last several years — get `sensitivity` and
+`press_to_select` and nothing else. On those, drift correction happens in
+firmware, where nothing in userspace can reach it. ThinkPoint says so in the
+status bar rather than implying the preset did more than it did, and the sysfs
+tab simply will not show a `drift_time` row.
+
+If you have reached that point, the remaining causes are physical and this
+program cannot help with any of them:
+
+- **A worn or badly seated cap.** A loose or split cap, or grit under it, puts
+  a constant off-centre load on the sensor. Pull it off, clean the post, press a
+  fresh one on. Caps are cheap and this is the single most common cause.
+- **Recalibration.** The stick re-zeroes itself when it detects no force. Rest a
+  finger on it while that is happening and it latches a bad zero. Lift off
+  completely for a few seconds. Drift just after boot, or as the machine warms
+  up, is the same effect — the strain gauges are temperature-sensitive and it
+  settles.
+- **Firmware.** Lenovo has shipped TrackPoint calibration fixes in BIOS updates
+  more than once. Worth checking before concluding the hardware is faulty.
+- **A failing sensor.** If it drifts in the BIOS setup screen too, it is not a
+  software problem at all, and the fix is a keyboard assembly replacement.
 
 ## Making it stick
 

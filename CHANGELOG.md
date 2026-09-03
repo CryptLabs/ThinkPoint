@@ -7,6 +7,12 @@ version is 0, a minor bump may still change behaviour.
 
 ## [Unreleased]
 
+### Changed
+
+- The README's drift section is now a walkthrough: measure first, what the
+  preset changes and why, how to tell whether it worked, and the physical
+  causes left over when it cannot help.
+
 ### Added
 
 - Logo and brand assets under `assets/`: the mark, a separate drawing for small

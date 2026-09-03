@@ -9,6 +9,10 @@ version is 0, a minor bump may still change behaviour.
 
 ### Fixed
 
+- The PKGBUILD has moved to `packaging/aur/`. Run from the repository root,
+  `makepkg` unpacks into `src/` — where the crate keeps its code — and
+  `makepkg -c` then deletes it. Nothing is lost that git cannot restore, but
+  the failure is baffling when it happens.
 - The PKGBUILD declares `gcc-libs` and `glibc`, which the binary links against
   and which were previously satisfied only by accident, and moves `sudo` to
   `optdepends` alongside `xinput` — neither is needed for the tool to run,

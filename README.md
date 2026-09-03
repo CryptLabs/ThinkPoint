@@ -103,6 +103,9 @@ cargo install thinkpoint
 yay -S thinkpoint
 ```
 
+The PKGBUILD lives in [`packaging/aur/`](packaging/aur/); see
+[`packaging/README.md`](packaging/README.md) for building and publishing it.
+
 **Debian and Ubuntu** — a `.deb` is attached to each release:
 
 ```sh

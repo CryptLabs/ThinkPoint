@@ -1,9 +1,2 @@
 /target
 /thinkpoint.bundle
-
-# makepkg, when run from the repository root
-/src/
-/pkg/
-/*.tar.gz
-/*.pkg.tar.zst
-/*.pkg.tar.zst.sig

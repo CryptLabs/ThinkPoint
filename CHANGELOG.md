@@ -5,12 +5,13 @@ Notable changes to ThinkPoint. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html) — while the major
 version is 0, a minor bump may still change behaviour.
 
-## [Unreleased]
+## [0.3.1] — 2026-09-03
 
 ### Changed
 
 - The author's email is no longer published in the crate metadata or the
-  PKGBUILD maintainer line, and the homepage points at cryptlabs.com.
+  PKGBUILD maintainer line, and the homepage points at cryptlabs.com. The about
+  screen reads both from the crate metadata, so 0.3.0 shows the old values.
 
 ## [0.3.0] — 2026-09-03
 
@@ -120,6 +121,7 @@ First release.
   `--restore` for the X-side settings udev cannot reach.
 - `--print-rule` and `--print-profile`.
 
+[0.3.1]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.3.1
 [0.3.0]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.3.0
 [0.2.0]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.2.0
 [0.1.0]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.1.0

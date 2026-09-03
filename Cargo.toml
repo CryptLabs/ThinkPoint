@@ -1,6 +1,6 @@
 [package]
 name = "thinkpoint"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "TUI for TrackPoint tuning, pointer button maps and libinput properties"
 license = "MIT"

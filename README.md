@@ -204,6 +204,10 @@ destructive, and `t` undoes it.
 Wayland: the sysfs tab works, everything X11-side does not. There is no
 equivalent of a per-device button map to configure from outside the compositor.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## Licence
 
 MIT.

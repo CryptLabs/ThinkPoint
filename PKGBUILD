@@ -1,6 +1,6 @@
 # Maintainer: Al1nuX <cryptlabs@gmail.com>
 pkgname=thinkpoint
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="TUI for TrackPoint tuning, pointer button maps and libinput properties"
 arch=('x86_64' 'aarch64')
@@ -37,5 +37,6 @@ package() {
   cd "$pkgname-$pkgver"
   install -Dm0755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
   install -Dm0644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm0644 CHANGELOG.md "$pkgdir/usr/share/doc/$pkgname/CHANGELOG.md"
   install -Dm0644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

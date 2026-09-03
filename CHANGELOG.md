@@ -5,6 +5,13 @@ Notable changes to ThinkPoint. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html) — while the major
 version is 0, a minor bump may still change behaviour.
 
+## [Unreleased]
+
+### Changed
+
+- The author's email is no longer published in the crate metadata or the
+  PKGBUILD maintainer line, and the homepage points at cryptlabs.com.
+
 ## [0.3.0] — 2026-09-03
 
 ### Added

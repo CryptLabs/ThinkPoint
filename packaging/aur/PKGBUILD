@@ -1,4 +1,4 @@
-# Maintainer: Al1nuX <cryptlabs@gmail.com>
+# Maintainer: Al1nuX
 pkgname=thinkpoint
 # GitHub names its archives after the repository, which is capitalised, so the
 # extracted directory is not $pkgname-$pkgver.

@@ -1404,7 +1404,7 @@ mod tests {
         assert!(screen.contains("ThinkPoint"));
         assert!(screen.contains(env!("CARGO_PKG_VERSION")));
         assert!(screen.contains("Al1nuX"));
-        assert!(screen.contains("cryptlabs.net"));
+        assert!(screen.contains("cryptlabs.com"));
         assert!(screen.contains("github.com/CryptLabs/ThinkPoint"));
         assert!(screen.contains("MIT"));
         if std::env::var("DUMP").is_ok() {

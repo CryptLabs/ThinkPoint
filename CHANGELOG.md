@@ -7,8 +7,16 @@ version is 0, a minor bump may still change behaviour.
 
 ## [Unreleased]
 
+### Fixed
+
+- The PKGBUILD unpacked into the wrong directory. GitHub names its archive
+  after the repository, which is capitalised, so the extracted directory is
+  `ThinkPoint-0.2.0` rather than `thinkpoint-0.2.0` and every build stage would
+  have failed on the first `cd`.
+
 ### Changed
 
+- The PKGBUILD no longer lists `gcc-libs`, which ships in `base`.
 - The README's drift section is now a walkthrough: measure first, what the
   preset changes and why, how to tell whether it worked, and the physical
   causes left over when it cannot help.

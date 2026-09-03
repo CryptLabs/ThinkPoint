@@ -9,6 +9,10 @@ version is 0, a minor bump may still change behaviour.
 
 ### Added
 
+- About screen (`i`): logo, version, author, website, source and licence, plus
+  what the current session found — xinput availability, device counts and
+  whether sudo will prompt.
+- The version is shown in the title bar.
 - Detached (floating) devices are listed and can be reattached with `t`, which
   reattaches to the master pointer and enables in one step.
 

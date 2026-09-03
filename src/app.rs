@@ -178,6 +178,7 @@ impl Device {
 
 pub enum Modal {
     Help,
+    About(About),
     Detect(Box<Detector>),
     Meter(Box<Meter>),
     MiddleButton(MiddleButton),
@@ -214,6 +215,17 @@ pub struct MiddleButton {
     pub cursor: usize,
     pub paste_supported: bool,
     pub scroll_supported: bool,
+}
+
+/// Facts worth having in front of you when something is not behaving, gathered
+/// when the screen opens rather than at start-up so they are current.
+#[derive(Debug, Clone)]
+pub struct About {
+    pub devices: usize,
+    pub with_sysfs: usize,
+    pub xinput: bool,
+    pub root: bool,
+    pub sudo_cached: bool,
 }
 
 /// Work that needs root, held while the password is collected.
@@ -1105,6 +1117,16 @@ impl App {
         } else {
             self.say(format!("Middle button: {}", done.join(", ")), Level::Good);
         }
+    }
+
+    pub fn open_about(&mut self) {
+        self.modal = Some(Modal::About(About {
+            devices: self.devices.len(),
+            with_sysfs: self.devices.iter().filter(|d| d.sysfs.is_some()).count(),
+            xinput: self.x11,
+            root: sysfs::is_root(),
+            sudo_cached: sysfs::sudo_ready(),
+        }));
     }
 
     pub fn open_meter(&mut self) {

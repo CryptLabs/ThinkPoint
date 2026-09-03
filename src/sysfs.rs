@@ -318,6 +318,10 @@ pub enum WriteVia {
     SudoPassword,
 }
 
+pub fn is_root() -> bool {
+    unsafe { libc_geteuid() == 0 }
+}
+
 /// Can we run sudo without anyone typing anything?
 pub fn sudo_ready() -> bool {
     Command::new("sudo")

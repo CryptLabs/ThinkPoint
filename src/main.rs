@@ -172,6 +172,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('c') if ctrl => app.should_quit = true,
 
         KeyCode::Char('?') => app.modal = Some(Modal::Help),
+        KeyCode::Char('i') => app.open_about(),
         KeyCode::Char('d') => app.open_detector(),
         KeyCode::Char('m') => app.open_meter(),
         KeyCode::Char('t') => app.toggle_device_enabled(),

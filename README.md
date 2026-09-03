@@ -94,6 +94,7 @@ tuning.
 | `space` | toggle: disable a button, flip an on/off setting |
 | `e` | type a value |
 | `t` | turn the selected device off or on |
+| `i` | about: version, links and what this session found |
 | `b` | middle button: paste and scroll, chosen separately |
 | `p` | stage the drift-reducing preset on this device |
 | `m` | measure drift with your hands off the machine |
@@ -232,6 +233,16 @@ equivalent of a per-device button map to configure from outside the compositor.
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
+
+## About screen
+
+`i` shows the version, the author, the links and a short summary of what this
+session found: whether `xinput` is available, how many devices were listed, how
+many have kernel-side tuning, and whether sudo will ask for a password. Those
+are the first things anyone needs in a bug report and the last things anyone
+thinks to look up, so they are one key away.
+
+The version also sits in the title bar, and `--version` prints it.
 
 ## Licence
 

@@ -76,7 +76,11 @@ fn draw_title(frame: &mut Frame, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            "  buttons, libinput and TrackPoint tuning",
+            format!("  {}", env!("CARGO_PKG_VERSION")),
+            Style::default().fg(ACCENT),
+        ),
+        Span::styled(
+            "  ·  buttons, libinput and TrackPoint tuning",
             Style::default().fg(DIM),
         ),
     ]);
@@ -494,7 +498,7 @@ fn draw_keys(frame: &mut Frame, app: &App, area: Rect) {
     let keys = if app.modal.is_some() {
         "esc close"
     } else {
-        "↑↓ move · space toggle · a apply · b middle · t on/off · p drift · m meter · s save · ? help · q quit"
+        "↑↓ move · space toggle · a apply · b middle · t on/off · p drift · m meter · s save · i about · ? help · q quit"
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
@@ -537,6 +541,7 @@ fn draw_modal(frame: &mut Frame, app: &mut App) {
 
     let (title, body): (String, Vec<Line>) = match app.modal.as_ref() {
         Some(Modal::Help) => ("Keys".to_string(), help_lines()),
+        Some(Modal::About(about)) => ("About".to_string(), about_lines(about)),
         Some(Modal::Meter(meter)) => ("Drift meter".to_string(), meter_lines(app, meter)),
         Some(Modal::Password {
             buffer,
@@ -900,6 +905,151 @@ fn meter_lines<'a>(app: &App, meter: &crate::detect::Meter) -> Vec<Line<'a>> {
     lines
 }
 
+/// A ThinkPad keyboard with the one red key in the middle of it. The dot is the
+/// whole point of the machine and of this program, so it gets to be red.
+///
+/// Rows are padded by measured width rather than by counting characters in the
+/// source, so the frame closes cleanly whatever the glyphs turn out to be.
+fn logo_lines() -> Vec<Line<'static>> {
+    const INNER: usize = 24;
+    const INDENT: &str = "    ";
+
+    let key = Style::default().fg(Color::Rgb(90, 94, 100));
+    let frame = Style::default().fg(DIM);
+    let dot = Style::default()
+        .fg(Color::Rgb(220, 60, 50))
+        .add_modifier(Modifier::BOLD);
+
+    let row = "▂▂ ▂▂ ▂▂ ▂▂ ▂▂ ▂▂ ▂▂";
+    let dot_left = "▂▂ ▂▂ ▂▂ ";
+    let dot_right = "  ▂▂ ▂▂ ▂▂";
+
+    // Split the leftover space either side, so a row of odd width still sits
+    // centred rather than drifting left.
+    let pads = |used: usize| {
+        let spare = INNER.saturating_sub(used);
+        (" ".repeat(spare / 2), " ".repeat(spare - spare / 2))
+    };
+
+    let plain = |content: &str| {
+        let (left, right) = pads(content.chars().count());
+        Line::from(vec![
+            Span::styled(format!("{INDENT}│{left}"), frame),
+            Span::styled(content.to_string(), key),
+            Span::styled(format!("{right}│"), frame),
+        ])
+    };
+
+    let (dot_left_pad, dot_right_pad) =
+        pads(dot_left.chars().count() + 1 + dot_right.chars().count());
+
+    vec![
+        Line::from(Span::styled(
+            format!("{INDENT}╭{}╮", "─".repeat(INNER)),
+            frame,
+        )),
+        plain(row),
+        Line::from(vec![
+            Span::styled(format!("{INDENT}│{dot_left_pad}"), frame),
+            Span::styled(dot_left.to_string(), key),
+            Span::styled("●".to_string(), dot),
+            Span::styled(dot_right.to_string(), key),
+            Span::styled(format!("{dot_right_pad}│"), frame),
+        ]),
+        plain(row),
+        Line::from(Span::styled(
+            format!("{INDENT}╰{}╯", "─".repeat(INNER)),
+            frame,
+        )),
+    ]
+}
+
+fn about_lines(about: &crate::app::About) -> Vec<Line<'static>> {
+    let label = Style::default().fg(DIM);
+    let value = Style::default().fg(Color::Gray);
+
+    let mut lines = logo_lines();
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("    ", label),
+        Span::styled(
+            "ThinkPoint",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  {}", env!("CARGO_PKG_VERSION")),
+            Style::default().fg(Color::Green),
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("    ", label),
+        Span::styled(env!("CARGO_PKG_DESCRIPTION"), label),
+    ]));
+    lines.push(Line::from(""));
+
+    let field = |name: &str, text: String| {
+        Line::from(vec![
+            Span::styled(format!("    {name:<12}"), label),
+            Span::styled(text, value),
+        ])
+    };
+
+    lines.push(field("author", env!("CARGO_PKG_AUTHORS").to_string()));
+    lines.push(field("website", env!("CARGO_PKG_HOMEPAGE").to_string()));
+    lines.push(field("source", env!("CARGO_PKG_REPOSITORY").to_string()));
+    lines.push(field(
+        "licence",
+        format!("{} — see LICENSE", env!("CARGO_PKG_LICENSE")),
+    ));
+    lines.push(field("built with", "Rust and ratatui".to_string()));
+    lines.push(Line::from(""));
+
+    // The state of the session, which is the first thing anyone asks about in a
+    // bug report and the last thing anyone thinks to look up.
+    lines.push(Line::from(Span::styled("    this session", label)));
+    let yes_no = |ok: bool, yes: &'static str, no: &'static str| {
+        if ok {
+            Span::styled(yes.to_string(), Style::default().fg(Color::Green))
+        } else {
+            Span::styled(no.to_string(), Style::default().fg(PENDING))
+        }
+    };
+    lines.push(Line::from(vec![
+        Span::styled("    xinput      ", label),
+        yes_no(about.xinput, "available", "missing — sysfs only"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("    devices     ", label),
+        Span::styled(
+            format!(
+                "{} listed, {} with sysfs tuning",
+                about.devices, about.with_sysfs
+            ),
+            value,
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("    root        ", label),
+        if about.root {
+            Span::styled("running as root".to_string(), Style::default().fg(PENDING))
+        } else {
+            yes_no(
+                about.sudo_cached,
+                "sudo ready, no prompt needed",
+                "sudo will ask for a password",
+            )
+        },
+    ]));
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "    Bug reports and patches welcome at the source link above. Please \
+         include the version line and what this screen says about your session.",
+        label,
+    )));
+    lines
+}
+
 fn help_lines() -> Vec<Line<'static>> {
     let rows = [
         ("↑ ↓ / j k", "move within the focused pane"),
@@ -916,6 +1066,7 @@ fn help_lines() -> Vec<Line<'static>> {
         ("d", "detect which device sends a button press"),
         ("m", "measure drift with your hands off the machine"),
         ("r", "re-read everything from the system"),
+        ("i", "about: version, links and what this session found"),
         ("q / esc", "quit"),
     ];
     let mut lines = vec![Line::from(Span::styled(
@@ -1233,6 +1384,93 @@ mod tests {
         a.focus = Focus::Devices;
         let screen = render(&mut a);
         assert!(screen.contains("xinput reattach"), "{screen}");
+    }
+
+    fn about_screen(root: bool, sudo: bool, xinput: bool) -> App {
+        let mut a = app(Tab::Buttons);
+        a.modal = Some(Modal::About(crate::app::About {
+            devices: 3,
+            with_sysfs: 2,
+            xinput,
+            root,
+            sudo_cached: sudo,
+        }));
+        a
+    }
+
+    #[test]
+    fn about_shows_the_version_name_and_links() {
+        let screen = render(&mut about_screen(false, true, true));
+        assert!(screen.contains("ThinkPoint"));
+        assert!(screen.contains(env!("CARGO_PKG_VERSION")));
+        assert!(screen.contains("Al1nuX"));
+        assert!(screen.contains("cryptlabs.net"));
+        assert!(screen.contains("github.com/CryptLabs/ThinkPoint"));
+        assert!(screen.contains("MIT"));
+        if std::env::var("DUMP").is_ok() {
+            panic!("\n{screen}");
+        }
+    }
+
+    #[test]
+    fn about_draws_the_logo() {
+        let screen = render(&mut about_screen(false, true, true));
+        assert!(screen.contains('●'), "the TrackPoint dot:\n{screen}");
+        assert!(screen.contains('╭') && screen.contains('╯'));
+    }
+
+    #[test]
+    fn the_logo_frame_closes_straight() {
+        // The dot is one column where a key is two, which is exactly the kind
+        // of thing that leaves a ragged edge nobody notices until it ships.
+        // Measure the rows themselves rather than the screen, where box-drawing
+        // characters make byte offsets a poor proxy for columns.
+        let widths: Vec<usize> = logo_lines()
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.chars().count())
+                    .sum()
+            })
+            .collect();
+
+        assert_eq!(widths.len(), 5, "logo should be five rows");
+        assert!(
+            widths.iter().all(|w| *w == widths[0]),
+            "every row must be the same width, got {widths:?}"
+        );
+    }
+
+    #[test]
+    fn about_reports_what_this_session_found() {
+        let screen = render(&mut about_screen(false, true, true));
+        assert!(screen.contains("3 listed, 2 with sysfs tuning"));
+        assert!(screen.contains("sudo ready"));
+        assert!(screen.contains("available"));
+    }
+
+    #[test]
+    fn about_warns_when_a_password_will_be_needed() {
+        let screen = render(&mut about_screen(false, false, true));
+        assert!(screen.contains("sudo will ask for a password"));
+    }
+
+    #[test]
+    fn about_says_when_xinput_is_missing() {
+        let screen = render(&mut about_screen(false, false, false));
+        assert!(screen.contains("sysfs only"));
+    }
+
+    #[test]
+    fn the_title_bar_carries_the_version() {
+        let mut a = app(Tab::Buttons);
+        let screen = render(&mut a);
+        let first_line = screen.lines().next().unwrap();
+        assert!(
+            first_line.contains(env!("CARGO_PKG_VERSION")),
+            "version belongs on the title bar: {first_line}"
+        );
     }
 
     #[test]

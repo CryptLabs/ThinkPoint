@@ -164,12 +164,46 @@ pub fn render_profile(settings: &[XSetting]) -> String {
     out
 }
 
+/// Fold this session's settings into whatever the profile already holds.
+///
+/// Same reasoning as the udev rule: once a setting has been persisted and
+/// replayed, it reads back as the session's starting state and stops counting
+/// as changed. Without merging, saving a second setting later would write a
+/// profile containing only that one.
+pub fn merge_settings(existing: Vec<XSetting>, current: &[XSetting]) -> Vec<XSetting> {
+    let mut merged = existing;
+
+    for now in current {
+        match merged.iter_mut().find(|e| e.device == now.device) {
+            Some(entry) => {
+                if now.enabled.is_some() {
+                    entry.enabled = now.enabled;
+                }
+                if now.button_map.is_some() {
+                    entry.button_map = now.button_map.clone();
+                }
+                for (name, values) in &now.props {
+                    match entry.props.iter_mut().find(|(n, _)| n == name) {
+                        Some(slot) => slot.1 = values.clone(),
+                        None => entry.props.push((name.clone(), values.clone())),
+                    }
+                }
+            }
+            None => merged.push(now.clone()),
+        }
+    }
+
+    merged
+}
+
 pub fn save_profile(settings: &[XSetting]) -> Result<PathBuf> {
     let path = profile_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, render_profile(settings))?;
+    let existing = load_profile().unwrap_or_default();
+    let merged = merge_settings(existing, settings);
+    fs::write(&path, render_profile(&merged))?;
     Ok(path)
 }
 
@@ -428,6 +462,86 @@ mod tests {
             props: Vec::new(),
         }]);
         assert!(!text.contains("Some Mouse"));
+    }
+
+    #[test]
+    fn a_previously_saved_setting_is_not_dropped_by_a_later_save() {
+        // Scroll was persisted last session, so this session starts with it
+        // already off and only the button map counts as changed.
+        let existing = vec![XSetting {
+            device: "TPPS/2 Elan TrackPoint".to_string(),
+            enabled: None,
+            button_map: None,
+            props: vec![(
+                "libinput Scroll Method Enabled".to_string(),
+                vec!["0".into(), "0".into(), "0".into()],
+            )],
+        }];
+        let now = vec![XSetting {
+            device: "TPPS/2 Elan TrackPoint".to_string(),
+            enabled: None,
+            button_map: Some(vec![1, 0, 3, 4, 5, 6, 7]),
+            props: Vec::new(),
+        }];
+
+        let merged = merge_settings(existing, &now);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].button_map, Some(vec![1, 0, 3, 4, 5, 6, 7]));
+        assert_eq!(
+            merged[0].props[0].1,
+            vec!["0".to_string(), "0".into(), "0".into()],
+            "the scroll setting must survive"
+        );
+    }
+
+    #[test]
+    fn a_new_value_overrides_the_saved_one() {
+        let existing = vec![XSetting {
+            device: "TPPS/2 Elan TrackPoint".to_string(),
+            enabled: Some(false),
+            button_map: Some(vec![1, 0, 3]),
+            props: vec![("libinput Accel Speed".to_string(), vec!["0.0".into()])],
+        }];
+        let now = vec![XSetting {
+            device: "TPPS/2 Elan TrackPoint".to_string(),
+            enabled: Some(true),
+            button_map: Some(vec![1, 2, 3]),
+            props: vec![("libinput Accel Speed".to_string(), vec!["-0.3".into()])],
+        }];
+
+        let merged = merge_settings(existing, &now);
+        assert_eq!(merged[0].enabled, Some(true));
+        assert_eq!(merged[0].button_map, Some(vec![1, 2, 3]));
+        assert_eq!(merged[0].props[0].1, vec!["-0.3".to_string()]);
+    }
+
+    #[test]
+    fn a_device_absent_this_session_keeps_its_saved_settings() {
+        // An external mouse that is simply not plugged in today.
+        let existing = vec![XSetting {
+            device: "Logitech MX Master".to_string(),
+            enabled: None,
+            button_map: Some(vec![1, 0, 3]),
+            props: Vec::new(),
+        }];
+        let merged = merge_settings(existing, &[]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].device, "Logitech MX Master");
+    }
+
+    #[test]
+    fn a_device_seen_for_the_first_time_is_appended() {
+        let merged = merge_settings(
+            Vec::new(),
+            &[XSetting {
+                device: "New Device".to_string(),
+                enabled: Some(false),
+                button_map: None,
+                props: Vec::new(),
+            }],
+        );
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].enabled, Some(false));
     }
 
     #[test]

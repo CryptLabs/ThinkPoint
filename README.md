@@ -181,8 +181,10 @@ Hand edits to the rule file survive too, as long as they are `ATTR{...}="..."`
 assignments on the live line.
 
 **Button maps, libinput properties and the on/off state belong to the X
-server**, and udev cannot reach them. Those go to
-`~/.config/thinkpoint/profile.conf`, replayed with:
+server**, and udev cannot reach them — including both halves of the
+middle-button choice, since pasting is the button map and scrolling is a
+libinput property. Those go to `~/.config/thinkpoint/profile.conf`, replayed
+with:
 
 ```sh
 thinkpoint --restore
@@ -193,6 +195,10 @@ Wire that into whatever starts your session — for i3:
 ```
 exec_always --no-startup-id thinkpoint --restore
 ```
+
+Without that line nothing on the X side comes back after a login, however many
+times you save. Saving merges with the existing profile rather than replacing
+it, for the same reason the udev rule does.
 
 ## Command line
 

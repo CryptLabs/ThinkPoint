@@ -13,6 +13,10 @@ version is 0, a minor bump may still change behaviour.
   session. After a reboot, an attribute the rule had already set reads back as
   the boot value and so looks unchanged; regenerating the rule for some other
   setting would leave it out. The existing rule file is now read and merged.
+- Saving the X profile has the same fix. A button map or libinput property
+  persisted earlier and replayed by `--restore` reads back as the session's
+  starting state, so saving something else afterwards would have dropped it.
+  Settings for devices that are not connected today are kept as well.
 
 ## [0.2.0] — 2026-09-03
 

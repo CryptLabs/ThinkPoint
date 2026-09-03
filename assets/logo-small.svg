@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="ThinkPoint">
+  <title>ThinkPoint</title>
+  <desc>The ThinkPoint mark reduced for small sizes: two keyboard rows and an oversized TrackPoint nub.</desc>
+
+  <!--
+    A separate drawing for 32px and below. The full mark's six-key rows turn to
+    mush at that size and the nub shrinks to a smudge, so here the keyboard is
+    two bars and the nub takes a third of the width, which is what actually
+    survives being a favicon.
+  -->
+  <defs>
+    <radialGradient id="nub" cx="38%" cy="34%" r="72%">
+      <stop offset="0%" stop-color="#f2564a"/>
+      <stop offset="55%" stop-color="#d93a2f"/>
+      <stop offset="100%" stop-color="#a8241c"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#14171a"/>
+  <g fill="#39414a">
+    <rect x="96" y="96"  width="320" height="60" rx="22"/>
+    <rect x="96" y="356" width="320" height="60" rx="22"/>
+  </g>
+  <circle cx="256" cy="256" r="92" fill="url(#nub)"/>
+</svg>

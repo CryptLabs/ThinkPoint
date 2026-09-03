@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1141 296"
+     width="1141" height="296" role="img" aria-label="ThinkPoint">
+  <title>ThinkPoint</title>
+  <defs>
+    <radialGradient id="nub" cx="38%" cy="34%" r="72%">
+      <stop offset="0%" stop-color="#f2564a"/>
+      <stop offset="55%" stop-color="#d93a2f"/>
+      <stop offset="100%" stop-color="#a8241c"/>
+    </radialGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#21262d"/>
+      <stop offset="100%" stop-color="#181c22"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(48,48.0)">
+    <rect width="200.0" height="200.0" rx="43.75" fill="#14171a"/>
+    <rect x="25.0" y="53.12" width="150.0" height="93.75" rx="11.72"
+          fill="url(#plate)" stroke="#2b3138" stroke-width="1"/>
+    <g fill="#39414a"><rect x="36.72" y="67.97" width="17.19" height="17.19" rx="4.3"/><rect x="58.59" y="67.97" width="17.19" height="17.19" rx="4.3"/><rect x="80.47" y="67.97" width="17.19" height="17.19" rx="4.3"/><rect x="102.34" y="67.97" width="17.19" height="17.19" rx="4.3"/><rect x="124.22" y="67.97" width="17.19" height="17.19" rx="4.3"/><rect x="146.09" y="67.97" width="17.19" height="17.19" rx="4.3"/><rect x="42.19" y="91.41" width="17.19" height="17.19" rx="4.3"/><rect x="64.06" y="91.41" width="17.19" height="17.19" rx="4.3"/><rect x="118.75" y="91.41" width="17.19" height="17.19" rx="4.3"/><rect x="140.62" y="91.41" width="17.19" height="17.19" rx="4.3"/><rect x="36.72" y="114.84" width="17.19" height="17.19" rx="4.3"/><rect x="58.59" y="114.84" width="17.19" height="17.19" rx="4.3"/><rect x="80.47" y="114.84" width="17.19" height="17.19" rx="4.3"/><rect x="102.34" y="114.84" width="17.19" height="17.19" rx="4.3"/><rect x="124.22" y="114.84" width="17.19" height="17.19" rx="4.3"/><rect x="146.09" y="114.84" width="17.19" height="17.19" rx="4.3"/></g>
+    <circle cx="100.0" cy="100.0" r="16.41" fill="#14171a"/>
+    <circle cx="100.0" cy="100.0" r="13.28" fill="url(#nub)"/>
+  </g>
+  <text x="292" y="196" font-family="DejaVu Sans, Verdana, sans-serif"
+        font-size="132" font-weight="bold" fill="#1b1f24">ThinkP</text>
+  <circle cx="845.11" cy="156.4"
+          r="39.6" fill="url(#nub)"/>
+  <text x="890.45" y="196" font-family="DejaVu Sans, Verdana, sans-serif"
+        font-size="132" font-weight="bold" fill="#1b1f24">int</text>
+</svg>

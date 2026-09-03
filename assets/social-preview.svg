@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640"
+     width="1280" height="640" role="img" aria-label="ThinkPoint">
+  <title>ThinkPoint</title>
+  <defs>
+    <radialGradient id="nub" cx="38%" cy="34%" r="72%">
+      <stop offset="0%" stop-color="#f2564a"/>
+      <stop offset="55%" stop-color="#d93a2f"/>
+      <stop offset="100%" stop-color="#a8241c"/>
+    </radialGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#21262d"/>
+      <stop offset="100%" stop-color="#181c22"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="#0d1117"/>
+  <g transform="translate(113.88,216.0)">
+    <rect width="208.0" height="208.0" rx="45.5" fill="#14171a"/>
+    <rect x="26.0" y="55.25" width="156.0" height="97.5" rx="12.19"
+          fill="url(#plate)" stroke="#2b3138" stroke-width="1"/>
+    <g fill="#39414a"><rect x="38.19" y="70.69" width="17.88" height="17.88" rx="4.47"/><rect x="60.94" y="70.69" width="17.88" height="17.88" rx="4.47"/><rect x="83.69" y="70.69" width="17.88" height="17.88" rx="4.47"/><rect x="106.44" y="70.69" width="17.88" height="17.88" rx="4.47"/><rect x="129.19" y="70.69" width="17.88" height="17.88" rx="4.47"/><rect x="151.94" y="70.69" width="17.88" height="17.88" rx="4.47"/><rect x="43.88" y="95.06" width="17.88" height="17.88" rx="4.47"/><rect x="66.62" y="95.06" width="17.88" height="17.88" rx="4.47"/><rect x="123.5" y="95.06" width="17.88" height="17.88" rx="4.47"/><rect x="146.25" y="95.06" width="17.88" height="17.88" rx="4.47"/><rect x="38.19" y="119.44" width="17.88" height="17.88" rx="4.47"/><rect x="60.94" y="119.44" width="17.88" height="17.88" rx="4.47"/><rect x="83.69" y="119.44" width="17.88" height="17.88" rx="4.47"/><rect x="106.44" y="119.44" width="17.88" height="17.88" rx="4.47"/><rect x="129.19" y="119.44" width="17.88" height="17.88" rx="4.47"/><rect x="151.94" y="119.44" width="17.88" height="17.88" rx="4.47"/></g>
+    <circle cx="104.0" cy="104.0" r="17.06" fill="#14171a"/>
+    <circle cx="104.0" cy="104.0" r="13.81" fill="url(#nub)"/>
+  </g>
+  <text x="377.88" y="316.0" font-family="DejaVu Sans, Verdana, sans-serif"
+        font-size="104" font-weight="bold" fill="#e8eaed">ThinkP</text>
+  <circle cx="813.68" cy="284.8"
+          r="31.2" fill="url(#nub)"/>
+  <text x="849.41" y="316.0"
+        font-family="DejaVu Sans, Verdana, sans-serif"
+        font-size="104" font-weight="bold" fill="#e8eaed">int</text>
+  <text x="377.88" y="382.0" font-family="DejaVu Sans, Verdana, sans-serif"
+        font-size="36" fill="#828b96">TrackPoint tuning, button maps and libinput</text>
+</svg>

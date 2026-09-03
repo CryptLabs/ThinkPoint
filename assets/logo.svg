@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="ThinkPoint">
+  <title>ThinkPoint</title>
+  <desc>A ThinkPad keyboard seen from above, with the red TrackPoint nub at its centre.</desc>
+
+  <defs>
+    <!-- The nub is the one thing that must survive being shrunk to a favicon,
+         so it gets the only gradient and the only saturated colour. -->
+    <radialGradient id="nub" cx="38%" cy="34%" r="72%">
+      <stop offset="0%" stop-color="#f2564a"/>
+      <stop offset="55%" stop-color="#d93a2f"/>
+      <stop offset="100%" stop-color="#a8241c"/>
+    </radialGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#21262d"/>
+      <stop offset="100%" stop-color="#181c22"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Near-black rather than pure black, so the mark keeps its edges on a dark
+       GitHub theme as well as a light one. -->
+  <rect width="512" height="512" rx="112" fill="#14171a"/>
+  <rect x="64" y="136" width="384" height="240" rx="30" fill="url(#plate)" stroke="#2b3138" stroke-width="2"/>
+
+  <g fill="#39414a">
+    <!-- Top row -->
+    <rect x="94"  y="174" width="44" height="44" rx="11"/>
+    <rect x="150" y="174" width="44" height="44" rx="11"/>
+    <rect x="206" y="174" width="44" height="44" rx="11"/>
+    <rect x="262" y="174" width="44" height="44" rx="11"/>
+    <rect x="318" y="174" width="44" height="44" rx="11"/>
+    <rect x="374" y="174" width="44" height="44" rx="11"/>
+
+    <!-- Middle row, opened up in the centre to seat the nub -->
+    <rect x="108" y="234" width="44" height="44" rx="11"/>
+    <rect x="164" y="234" width="44" height="44" rx="11"/>
+    <rect x="304" y="234" width="44" height="44" rx="11"/>
+    <rect x="360" y="234" width="44" height="44" rx="11"/>
+
+    <!-- Bottom row -->
+    <rect x="94"  y="294" width="44" height="44" rx="11"/>
+    <rect x="150" y="294" width="44" height="44" rx="11"/>
+    <rect x="206" y="294" width="44" height="44" rx="11"/>
+    <rect x="262" y="294" width="44" height="44" rx="11"/>
+    <rect x="318" y="294" width="44" height="44" rx="11"/>
+    <rect x="374" y="294" width="44" height="44" rx="11"/>
+  </g>
+
+  <!-- The TrackPoint itself: a seat ring, then the cap. -->
+  <circle cx="256" cy="256" r="42" fill="#14171a"/>
+  <circle cx="256" cy="256" r="34" fill="url(#nub)"/>
+  <circle cx="256" cy="256" r="34" fill="none" stroke="#7d1a14" stroke-width="1.5" opacity="0.6"/>
+</svg>

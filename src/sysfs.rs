@@ -167,6 +167,11 @@ pub struct Node {
     pub path: PathBuf,
     pub description: String,
     pub firmware_id: String,
+    /// Names of the input devices this serio node produces, e.g.
+    /// "TPPS/2 Elan TrackPoint". Used to recognise a node as belonging to a
+    /// device already listed by xinput, even when the X server is no longer
+    /// reporting a device node for it.
+    pub input_names: Vec<String>,
     pub attrs: Vec<Attr>,
 }
 
@@ -198,7 +203,7 @@ fn read_trimmed(path: &Path) -> Option<String> {
 
 fn writable_directly(path: &Path) -> bool {
     // Cheap approximation: root can write anything, otherwise look for the
-    // user write bit. Getting it wrong only costs a fallback to pkexec.
+    // user write bit. Getting it wrong only costs a fallback to sudo.
     if unsafe { libc_geteuid() } == 0 {
         return true;
     }
@@ -213,6 +218,20 @@ unsafe fn libc_geteuid() -> u32 {
         fn geteuid() -> u32;
     }
     unsafe { geteuid() }
+}
+
+/// Every `input/inputN/name` under a serio node.
+fn input_names(path: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    let Ok(entries) = fs::read_dir(path.join("input")) else {
+        return names;
+    };
+    for entry in entries.flatten() {
+        if let Some(name) = read_trimmed(&entry.path().join("name")) {
+            names.push(name);
+        }
+    }
+    names
 }
 
 /// Build a Node for a sysfs directory, if it holds any attribute we know.
@@ -250,6 +269,7 @@ pub fn node_at(path: &Path) -> Option<Node> {
     Some(Node {
         description: read_trimmed(&path.join("description")).unwrap_or_default(),
         firmware_id: read_trimmed(&path.join("firmware_id")).unwrap_or_default(),
+        input_names: input_names(path),
         path: path.to_path_buf(),
         attrs,
     })
@@ -292,10 +312,87 @@ pub fn scan_all() -> Vec<Node> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteVia {
     Direct,
-    Pkexec,
+    /// sudo accepted us without asking: either NOPASSWD, or a timestamp still
+    /// valid from an earlier authentication.
+    SudoCached,
+    SudoPassword,
 }
 
-pub fn write_attr(attr: &Attr) -> Result<WriteVia> {
+/// Can we run sudo without anyone typing anything?
+pub fn sudo_ready() -> bool {
+    Command::new("sudo")
+        .args(["-n", "true"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Run a shell snippet as root.
+///
+/// The ladder is: sudo without a prompt, then sudo with the password we were
+/// given on stdin. The password never appears in the argument list, where it
+/// would be visible to anyone running ps.
+fn run_as_root(script: &str, password: Option<&str>, stdin_data: Option<&str>) -> Result<WriteVia> {
+    let cached = sudo_ready();
+    if password.is_none() && !cached {
+        return Err(Error::needs_password());
+    }
+
+    let mut command = Command::new("sudo");
+    if cached && password.is_none() {
+        command.arg("-n");
+    } else {
+        // -S reads the password from stdin, -p '' suppresses sudo's own prompt
+        // since we have already asked for it ourselves.
+        command.args(["-S", "-p", ""]);
+    }
+    command
+        .arg("/bin/sh")
+        .arg("-c")
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+
+    let mut child = command.spawn().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            Error::new("sudo not found")
+        } else {
+            Error::new(format!("sudo: {e}"))
+        }
+    })?;
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        if let Some(password) = password {
+            stdin.write_all(password.as_bytes())?;
+            stdin.write_all(b"\n")?;
+        }
+        if let Some(data) = stdin_data {
+            stdin.write_all(data.as_bytes())?;
+        }
+    }
+    drop(child.stdin.take());
+
+    let output = child.wait_with_output()?;
+    if output.status.success() {
+        return Ok(if password.is_some() {
+            WriteVia::SudoPassword
+        } else {
+            WriteVia::SudoCached
+        });
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
+    if stderr.contains("incorrect password") || stderr.contains("sorry, try again") {
+        return Err(Error::new("that password was not accepted"));
+    }
+    Err(Error::new("sudo refused the command"))
+}
+
+pub fn write_attr(attr: &Attr, password: Option<&str>) -> Result<WriteVia> {
     ensure_shell_safe(&attr.pending)?;
 
     if attr.writable_directly {
@@ -316,33 +413,12 @@ pub fn write_attr(attr: &Attr) -> Result<WriteVia> {
         return Err(Error::new("refusing to shell out with a quote in the path"));
     }
     let script = format!("printf '%s' '{}' > '{}'", attr.pending, path);
-    let status = Command::new("pkexec")
-        .arg("/bin/sh")
-        .arg("-c")
-        .arg(&script)
-        .status()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                Error::new(format!(
-                    "needs root and pkexec is missing — run: sudo sh -c \"{script}\""
-                ))
-            } else {
-                Error::new(format!("pkexec: {e}"))
-            }
-        })?;
-
-    if status.success() {
-        Ok(WriteVia::Pkexec)
-    } else {
-        Err(Error::new(format!(
-            "pkexec declined — run: sudo sh -c \"{script}\""
-        )))
-    }
+    run_as_root(&script, password, None)
 }
 
-/// Write a file that needs root, via pkexec, with the content on stdin so it
+/// Write a file that needs root, with the content on stdin so it
 /// never has to survive a trip through the shell.
-pub fn write_root_file(target: &str, content: &str) -> Result<WriteVia> {
+pub fn write_root_file(target: &str, content: &str, password: Option<&str>) -> Result<WriteVia> {
     if unsafe { libc_geteuid() } == 0 {
         if let Some(parent) = Path::new(target).parent() {
             fs::create_dir_all(parent)?;
@@ -354,30 +430,10 @@ pub fn write_root_file(target: &str, content: &str) -> Result<WriteVia> {
     if target.contains('\'') {
         return Err(Error::new("refusing to shell out with a quote in the path"));
     }
+    // The content follows the password down the same pipe, so it never has to
+    // survive a trip through the shell.
     let script = format!("cat > '{target}'");
-    let mut child = Command::new("pkexec")
-        .arg("/bin/sh")
-        .arg("-c")
-        .arg(&script)
-        .stdin(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                Error::new("needs root and pkexec is missing")
-            } else {
-                Error::new(format!("pkexec: {e}"))
-            }
-        })?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin.write_all(content.as_bytes())?;
-    }
-    let status = child.wait()?;
-    if status.success() {
-        Ok(WriteVia::Pkexec)
-    } else {
-        Err(Error::new("pkexec declined the write"))
-    }
+    run_as_root(&script, password, Some(content))
 }
 
 #[cfg(test)]
@@ -484,12 +540,30 @@ mod tests {
     }
 
     #[test]
-    fn shell_unsafe_values_are_refused_before_they_reach_pkexec() {
+    fn a_node_reports_the_input_devices_behind_it() {
+        let dir = scratch("names");
+        put(&dir, "sensitivity", "128");
+        fs::create_dir_all(dir.join("input/input5")).unwrap();
+        fs::write(dir.join("input/input5/name"), "TPPS/2 Elan TrackPoint\n").unwrap();
+
+        let node = node_at(&dir).unwrap();
+        assert_eq!(node.input_names, vec!["TPPS/2 Elan TrackPoint"]);
+    }
+
+    #[test]
+    fn a_node_without_an_input_directory_still_parses() {
+        let dir = scratch("no-input");
+        put(&dir, "sensitivity", "128");
+        assert!(node_at(&dir).unwrap().input_names.is_empty());
+    }
+
+    #[test]
+    fn shell_unsafe_values_are_refused_before_they_reach_a_shell() {
         let dir = scratch("injection");
         put(&dir, "sensitivity", "128");
         let mut node = node_at(&dir).unwrap();
         node.attrs[0].pending = "90; rm -rf /".into();
         node.attrs[0].writable_directly = false;
-        assert!(write_attr(&node.attrs[0]).is_err());
+        assert!(write_attr(&node.attrs[0], Some("unused")).is_err());
     }
 }

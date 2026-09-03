@@ -483,7 +483,7 @@ fn draw_keys(frame: &mut Frame, app: &App, area: Rect) {
     let keys = if app.modal.is_some() {
         "esc close"
     } else {
-        "↑↓ move · ←→ adjust · space toggle · a apply · t on/off · p drift · m meter · s save · ? help · q quit"
+        "↑↓ move · space toggle · a apply · b middle · t on/off · p drift · m meter · s save · ? help · q quit"
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
@@ -527,6 +527,53 @@ fn draw_modal(frame: &mut Frame, app: &mut App) {
     let (title, body): (String, Vec<Line>) = match app.modal.as_ref() {
         Some(Modal::Help) => ("Keys".to_string(), help_lines()),
         Some(Modal::Meter(meter)) => ("Drift meter".to_string(), meter_lines(app, meter)),
+        Some(Modal::Password {
+            buffer,
+            action,
+            error,
+        }) => {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    format!("Root is needed to {}.", action.describe()),
+                    Style::default().fg(Color::Gray),
+                )),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("password  ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        "•".repeat(buffer.chars().count()),
+                        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("▏", Style::default().fg(ACCENT)),
+                ]),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "enter to continue · esc to cancel",
+                    Style::default().fg(DIM),
+                )),
+            ];
+            if let Some(message) = error {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    message.clone(),
+                    Style::default().fg(OFF),
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Your password goes to sudo on standard input — never into a \
+                 command line, never to a file, and never anywhere this program \
+                 keeps it. It is overwritten in memory as soon as sudo has it. \
+                 sudo caches the authentication for a few minutes afterwards, so \
+                 further writes in this session will not ask again.",
+                Style::default().fg(DIM),
+            )));
+            ("Authentication".to_string(), lines)
+        }
+        Some(Modal::MiddleButton(choice)) => (
+            "Middle button".to_string(),
+            middle_button_lines(app, choice),
+        ),
         Some(Modal::Detect(detector)) => {
             let mut lines = vec![
                 Line::from(Span::styled(
@@ -650,6 +697,107 @@ fn draw_modal(frame: &mut Frame, app: &mut App) {
     );
 }
 
+fn middle_button_lines<'a>(app: &App, choice: &crate::app::MiddleButton) -> Vec<Line<'a>> {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            format!("On {}", app.device().name),
+            Style::default().fg(Color::Gray),
+        )),
+        Line::from(""),
+    ];
+
+    let row = |selected: bool, on: bool, supported: bool, label: &str, detail: &str| {
+        let marker = if !supported {
+            Span::styled("  —  ", Style::default().fg(DIM))
+        } else if on {
+            Span::styled("  ●  ", Style::default().fg(Color::Green))
+        } else {
+            Span::styled("  ○  ", Style::default().fg(OFF))
+        };
+        let name_style = if !supported {
+            Style::default().fg(DIM)
+        } else if selected {
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        Line::from(vec![
+            Span::styled(
+                if selected { "▸" } else { " " },
+                Style::default().fg(ACCENT),
+            ),
+            marker,
+            Span::styled(format!("{label:<26}"), name_style),
+            Span::styled(detail.to_string(), Style::default().fg(DIM)),
+        ])
+    };
+
+    lines.push(row(
+        choice.cursor == 0,
+        choice.paste,
+        choice.paste_supported,
+        "Paste on click",
+        if choice.paste_supported {
+            "button 2 reaches applications"
+        } else {
+            "no middle button on this device"
+        },
+    ));
+    lines.push(row(
+        choice.cursor == 1,
+        choice.scroll,
+        choice.scroll_supported,
+        "Scroll while held",
+        if choice.scroll_supported {
+            "libinput button scrolling"
+        } else {
+            "no scroll method on this device"
+        },
+    ));
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "space toggles the highlighted row · enter applies both · esc cancels",
+        Style::default().fg(DIM),
+    )));
+    lines.push(Line::from(""));
+
+    // The two settings live in different places, and saying where makes the
+    // combination below understandable rather than magical.
+    let device = app.device();
+    if choice.paste_supported {
+        let restore = device.original_buttons.get(1).copied().unwrap_or(2);
+        let mut map = device.pending_buttons.clone();
+        if map.len() > 1 {
+            map[1] = if choice.paste { restore } else { 0 };
+        }
+        lines.push(Line::from(Span::styled(
+            crate::xinput::button_map_command(&device.name, &map),
+            Style::default().fg(Color::Magenta),
+        )));
+    }
+    if choice.scroll_supported
+        && let Some(index) = device.scroll_prop()
+    {
+        let mut values = device.props[index].pending.clone();
+        if values.len() > crate::app::SCROLL_BUTTON_INDEX {
+            values[crate::app::SCROLL_BUTTON_INDEX] =
+                if choice.scroll { "1" } else { "0" }.to_string();
+        }
+        lines.push(Line::from(Span::styled(
+            crate::xinput::set_prop_command(&device.name, crate::app::SCROLL_METHOD, &values),
+            Style::default().fg(Color::Magenta),
+        )));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Scroll off, paste on is the stock arrangement. Scroll on, paste off is          the usual reason for coming here: the stick still scrolls, but a middle          click no longer dumps the selection into whatever has focus. libinput          takes the button for scrolling before the X button map is consulted, so          the two settings do not fight.",
+        Style::default().fg(DIM),
+    )));
+    lines
+}
+
 fn meter_lines<'a>(app: &App, meter: &crate::detect::Meter) -> Vec<Line<'a>> {
     let mut lines = vec![
         Line::from(Span::styled(
@@ -751,6 +899,7 @@ fn help_lines() -> Vec<Line<'static>> {
         ("a", "apply everything staged in this section"),
         ("u", "reset the button map to how it was at start-up"),
         ("t", "turn the selected device off or on (applies at once)"),
+        ("b", "middle button: choose paste and scroll independently"),
         ("p", "stage the drift-reducing preset on this device"),
         ("s", "save — udev rule for sysfs, profile for X settings"),
         ("d", "detect which device sends a button press"),
@@ -841,6 +990,7 @@ mod tests {
                 path: PathBuf::from("/sys/devices/platform/i8042/serio1"),
                 description: "i8042 AUX port".into(),
                 firmware_id: "PNP: LEN0321".into(),
+                input_names: vec!["TPPS/2 Elan TrackPoint".into()],
                 attrs: vec![
                     attr("sensitivity", "128", "90", AttrKind::Range(0, 255)),
                     attr("press_to_select", "0", "0", AttrKind::Bool),
@@ -991,6 +1141,65 @@ mod tests {
         a.modal = Some(Modal::Help);
         let screen = render(&mut a);
         assert!(screen.contains("turn the selected device off or on"));
+    }
+
+    #[test]
+    fn the_password_prompt_masks_what_you_type() {
+        let mut a = app(Tab::Sysfs);
+        a.modal = Some(Modal::Password {
+            buffer: "hunter2".to_string(),
+            action: crate::app::RootAction::Sysfs,
+            error: None,
+        });
+        let screen = render(&mut a);
+        assert!(screen.contains("•••••••"), "should be masked:\n{screen}");
+        assert!(
+            !screen.contains("hunter2"),
+            "the password must never be drawn"
+        );
+        assert!(screen.contains("standard input"));
+    }
+
+    #[test]
+    fn a_rejected_password_says_so_on_the_retry() {
+        let mut a = app(Tab::Sysfs);
+        a.modal = Some(Modal::Password {
+            buffer: String::new(),
+            action: crate::app::RootAction::Sysfs,
+            error: Some("that password was not accepted".into()),
+        });
+        let screen = render(&mut a);
+        assert!(screen.contains("not accepted"));
+    }
+
+    #[test]
+    fn the_middle_button_panel_shows_both_switches_and_both_commands() {
+        let mut a = app(Tab::Buttons);
+        a.modal = Some(Modal::MiddleButton(crate::app::MiddleButton {
+            paste: false,
+            scroll: true,
+            cursor: 0,
+            paste_supported: true,
+            scroll_supported: false,
+        }));
+        let screen = render(&mut a);
+        assert!(screen.contains("Paste on click"));
+        assert!(screen.contains("Scroll while held"));
+        assert!(screen.contains("xinput set-button-map"));
+    }
+
+    #[test]
+    fn an_unsupported_middle_button_row_is_marked_rather_than_hidden() {
+        let mut a = app(Tab::Buttons);
+        a.modal = Some(Modal::MiddleButton(crate::app::MiddleButton {
+            paste: true,
+            scroll: false,
+            cursor: 0,
+            paste_supported: true,
+            scroll_supported: false,
+        }));
+        let screen = render(&mut a);
+        assert!(screen.contains("no scroll method on this device"));
     }
 
     #[test]

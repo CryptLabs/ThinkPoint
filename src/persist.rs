@@ -205,6 +205,7 @@ mod tests {
             path: PathBuf::from("/sys/devices/platform/i8042/serio1"),
             description: "i8042 AUX port".to_string(),
             firmware_id: "PNP: LEN0321 PNP0f13".to_string(),
+            input_names: Vec::new(),
             attrs,
         }
     }

@@ -69,9 +69,10 @@ WHAT IT TOUCHES:
     go through xinput and last until the session ends; --restore replays them,
     so it suits an autostart line.
 
-    TrackPoint and psmouse knobs live in /sys and need root to write. The
-    interface offers a udev rule so they survive a reboot and, unlike a
-    session hook, a suspend/resume cycle too.
+    TrackPoint and psmouse knobs live in /sys and need root to write; the
+    interface asks for your password when sudo needs one. It offers a udev
+    rule so they survive a reboot and, unlike a session hook, a suspend and
+    resume cycle too.
 
     Nothing is written without you asking. Values are staged, applied with 'a',
     and only saved to disk from the 's' screen."
@@ -174,6 +175,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Char('d') => app.open_detector(),
         KeyCode::Char('m') => app.open_meter(),
         KeyCode::Char('t') => app.toggle_device_enabled(),
+        KeyCode::Char('b') => app.open_middle_button(),
         KeyCode::Char('p') => app.apply_drift_preset(),
         KeyCode::Char('s') => app.open_persist(),
         KeyCode::Char('r') => app.refresh(),
@@ -239,6 +241,52 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) {
                 buffer.pop();
             }
             KeyCode::Char(c) => buffer.push(c),
+            _ => {}
+        }
+        return;
+    }
+
+    // The password prompt swallows keys the same way the text editor does.
+    if let Some(Modal::Password { buffer, action, .. }) = app.modal.as_mut() {
+        match key.code {
+            KeyCode::Esc => {
+                crate::error::scrub(buffer);
+                app.modal = None;
+                app.say("Cancelled — nothing was written", Level::Info);
+            }
+            KeyCode::Enter => {
+                let mut password = std::mem::take(buffer);
+                let action = action.clone();
+                app.modal = None;
+                app.retry_with_password(action, &password);
+                crate::error::scrub(&mut password);
+            }
+            KeyCode::Backspace => {
+                buffer.pop();
+            }
+            KeyCode::Char(c) => buffer.push(c),
+            _ => {}
+        }
+        return;
+    }
+
+    if let Some(Modal::MiddleButton(choice)) = app.modal.as_mut() {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => app.modal = None,
+            KeyCode::Up | KeyCode::Char('k') => choice.cursor = 0,
+            KeyCode::Down | KeyCode::Char('j') => choice.cursor = 1,
+            KeyCode::Char(' ') => {
+                if choice.cursor == 0 && choice.paste_supported {
+                    choice.paste = !choice.paste;
+                } else if choice.cursor == 1 && choice.scroll_supported {
+                    choice.scroll = !choice.scroll;
+                }
+            }
+            KeyCode::Enter => {
+                let choice = choice.clone();
+                app.modal = None;
+                app.apply_middle_button(choice);
+            }
             _ => {}
         }
         return;

@@ -6,10 +6,9 @@ pkgdesc="TUI for TrackPoint tuning, pointer button maps and libinput properties"
 arch=('x86_64' 'aarch64')
 url="https://github.com/CryptLabs/ThinkPoint"
 license=('MIT')
-depends=('gcc-libs')
+depends=('gcc-libs' 'sudo')
 optdepends=(
-  'xorg-xinput: button maps, libinput properties and the source detector'
-  'polkit: write sysfs and udev files without dropping to a shell'
+  'xorg-xinput: button maps, libinput properties, the detector and the meter'
 )
 makedepends=('cargo')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")

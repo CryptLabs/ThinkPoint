@@ -154,12 +154,37 @@ impl Device {
     pub fn enabled_customised(&self) -> bool {
         self.enabled != self.originally_enabled
     }
+
+    pub fn scroll_prop(&self) -> Option<usize> {
+        self.props.iter().position(|p| p.prop.name == SCROLL_METHOD)
+    }
+
+    /// Whether libinput is currently set to scroll while the middle button is
+    /// held.
+    pub fn button_scrolling(&self) -> Option<bool> {
+        let row = &self.props[self.scroll_prop()?];
+        row.pending.get(SCROLL_BUTTON_INDEX).map(|v| v == "1")
+    }
+
+    /// Whether button 2 still reaches applications, which is what makes a
+    /// middle click paste the primary selection.
+    pub fn middle_click_delivered(&self) -> Option<bool> {
+        self.pending_buttons.get(1).map(|b| *b != 0)
+    }
 }
 
 pub enum Modal {
     Help,
     Detect(Box<Detector>),
     Meter(Box<Meter>),
+    MiddleButton(MiddleButton),
+    Password {
+        buffer: String,
+        /// What to retry once we have the password.
+        action: RootAction,
+        /// Set after a rejected attempt, so the second try says why.
+        error: Option<String>,
+    },
     Persist {
         rule: String,
         profile: String,
@@ -172,6 +197,44 @@ pub enum Modal {
         target: EditTarget,
     },
 }
+
+/// The middle button does two unrelated jobs, and people usually want one of
+/// them and not the other. They are also controlled in two different places:
+/// pasting is the X button map delivering button 2 to applications, scrolling
+/// is libinput consuming that button before the map is consulted. This gathers
+/// both into one choice.
+#[derive(Debug, Clone)]
+pub struct MiddleButton {
+    pub paste: bool,
+    pub scroll: bool,
+    /// 0 = paste row, 1 = scroll row.
+    pub cursor: usize,
+    pub paste_supported: bool,
+    pub scroll_supported: bool,
+}
+
+/// Work that needs root, held while the password is collected.
+#[derive(Debug, Clone)]
+pub enum RootAction {
+    /// Write the staged sysfs attributes on the selected device.
+    Sysfs,
+    /// Write the generated udev rule.
+    Udev(String),
+}
+
+impl RootAction {
+    pub fn describe(&self) -> String {
+        match self {
+            RootAction::Sysfs => "write the staged sysfs values".to_string(),
+            RootAction::Udev(_) => format!("write {}", persist::UDEV_PATH),
+        }
+    }
+}
+
+/// The libinput property holding [two-finger, edge, button] scrolling.
+pub const SCROLL_METHOD: &str = "libinput Scroll Method Enabled";
+/// Index of the button-scrolling entry within it.
+pub const SCROLL_BUTTON_INDEX: usize = 2;
 
 #[derive(Debug, Clone, Copy)]
 pub enum EditTarget {
@@ -258,8 +321,19 @@ impl App {
 
         // Anything on the serio bus that no X device claimed still deserves a
         // row: under Wayland, that is the only view there is.
+        //
+        // "Claimed" cannot rest on the Device Node property alone. A disabled
+        // device may stop reporting one, and then its serio node looks
+        // unclaimed and the same touchpad appears twice — once as the real X
+        // device and once as a dead sysfs-only row with no way to switch it
+        // back on. Matching the node's own input names against the device list
+        // closes that gap.
+        let listed: Vec<String> = devices.iter().map(|d| d.name.clone()).collect();
         for node in sysfs::scan_all() {
             if claimed.contains(&node.path) {
+                continue;
+            }
+            if node.input_names.iter().any(|n| listed.contains(n)) {
                 continue;
             }
             devices.push(Device {
@@ -579,14 +653,60 @@ impl App {
     // ---- Applying -------------------------------------------------------
 
     pub fn apply(&mut self) {
+        self.apply_with(None);
+    }
+
+    /// `password` is only ever Some when coming back from the prompt, and is
+    /// used for this one call before the caller scrubs it.
+    pub fn apply_with(&mut self, password: Option<&str>) {
         let result = match self.tab {
             Tab::Buttons => self.apply_buttons(),
             Tab::Libinput => self.apply_props(),
-            Tab::Sysfs => self.apply_sysfs(),
+            Tab::Sysfs => self.apply_sysfs(password),
         };
         match result {
             Ok(message) => self.say(message, Level::Good),
+            Err(e) if e.is_needs_password() => self.ask_for_password(RootAction::Sysfs, None),
             Err(e) => self.say(e.to_string(), Level::Bad),
+        }
+    }
+
+    pub fn ask_for_password(&mut self, action: RootAction, error: Option<String>) {
+        self.modal = Some(Modal::Password {
+            buffer: String::new(),
+            action,
+            error,
+        });
+    }
+
+    /// Retry whatever needed root, now that we have a password. The caller owns
+    /// the string and scrubs it immediately afterwards.
+    pub fn retry_with_password(&mut self, action: RootAction, password: &str) {
+        let result = match &action {
+            RootAction::Sysfs => self.apply_sysfs(Some(password)),
+            RootAction::Udev(rule) => {
+                let rule = rule.clone();
+                sysfs::write_root_file(persist::UDEV_PATH, &rule, Some(password)).map(|_| {
+                    format!(
+                        "Wrote {} — reload with: sudo udevadm control --reload",
+                        persist::UDEV_PATH
+                    )
+                })
+            }
+        };
+        match result {
+            Ok(message) => self.say(message, Level::Good),
+            Err(e) if e.is_needs_password() => self.ask_for_password(action, None),
+            Err(e) => {
+                // A wrong password should reopen the prompt rather than dump the
+                // user back to the main screen to start again.
+                let message = e.to_string();
+                if message.contains("not accepted") {
+                    self.ask_for_password(action, Some(message));
+                } else {
+                    self.say(message, Level::Bad);
+                }
+            }
         }
     }
 
@@ -650,7 +770,7 @@ impl App {
         Ok(format!("Applied {} property change(s)", changes.len()))
     }
 
-    fn apply_sysfs(&mut self) -> Result<String> {
+    fn apply_sysfs(&mut self, password: Option<&str>) -> Result<String> {
         let device = self.device_mut();
         let Some(node) = device.sysfs.as_mut() else {
             return Err(Error::new("this device has no sysfs attributes"));
@@ -669,8 +789,8 @@ impl App {
         let mut elevated = false;
         for index in &dirty {
             let attr = &node.attrs[*index];
-            match sysfs::write_attr(attr) {
-                Ok(WriteVia::Pkexec) => elevated = true,
+            match sysfs::write_attr(attr, password) {
+                Ok(WriteVia::SudoCached | WriteVia::SudoPassword) => elevated = true,
                 Ok(WriteVia::Direct) => {}
                 Err(e) => return Err(e),
             }
@@ -681,7 +801,7 @@ impl App {
         Ok(format!(
             "Wrote {} sysfs attribute(s){}",
             dirty.len(),
-            if elevated { " via pkexec" } else { "" }
+            if elevated { " as root" } else { "" }
         ))
     }
 
@@ -726,7 +846,7 @@ impl App {
     }
 
     pub fn write_udev(&mut self, rule: &str) {
-        match sysfs::write_root_file(persist::UDEV_PATH, rule) {
+        match sysfs::write_root_file(persist::UDEV_PATH, rule, None) {
             Ok(_) => self.say(
                 format!(
                     "Wrote {} — reload with: sudo udevadm control --reload",
@@ -734,6 +854,9 @@ impl App {
                 ),
                 Level::Good,
             ),
+            Err(e) if e.is_needs_password() => {
+                self.ask_for_password(RootAction::Udev(rule.to_string()), None)
+            }
             Err(e) => self.say(e.to_string(), Level::Bad),
         }
     }
@@ -782,22 +905,152 @@ impl App {
             );
             return;
         };
-        let target = !self.devices[index].enabled;
 
-        match xinput::set_enabled(id, target) {
-            Ok(()) => {
-                self.devices[index].enabled = target;
-                let name = self.devices[index].name.clone();
-                if target {
-                    self.say(format!("{name} enabled"), Level::Good);
-                } else {
-                    self.say(
-                        format!("{name} disabled — press t again to bring it back"),
-                        Level::Warn,
-                    );
+        // Read the live state rather than trusting what was cached at start-up.
+        // If that value were stale — the device disabled by an earlier run, say
+        // — the toggle would invert and appear to do nothing at all.
+        let current = match xinput::read_enabled(id) {
+            Ok(state) => {
+                self.devices[index].enabled = state;
+                state
+            }
+            Err(e) => {
+                self.say(
+                    format!("could not read the device's state: {e}"),
+                    Level::Bad,
+                );
+                return;
+            }
+        };
+        let target = !current;
+
+        if let Err(e) = xinput::set_enabled(id, target) {
+            self.say(e.to_string(), Level::Bad);
+            return;
+        }
+
+        // And confirm it took, rather than reporting success on the strength of
+        // an exit code.
+        let confirmed = xinput::read_enabled(id).unwrap_or(target);
+        self.devices[index].enabled = confirmed;
+        let name = self.devices[index].name.clone();
+
+        if confirmed != target {
+            self.say(
+                format!("{name} did not change state — the X server kept it as it was"),
+                Level::Bad,
+            );
+        } else if confirmed {
+            self.say(format!("{name} enabled"), Level::Good);
+        } else {
+            self.say(
+                format!("{name} disabled — press t again to bring it back"),
+                Level::Warn,
+            );
+        }
+    }
+
+    pub fn open_middle_button(&mut self) {
+        let device = self.device();
+        if device.id().is_none() {
+            self.say("This row has no X device to configure", Level::Bad);
+            return;
+        }
+        let paste_supported = device.middle_click_delivered().is_some();
+        let scroll_supported = device.button_scrolling().is_some();
+
+        if !paste_supported && !scroll_supported {
+            self.say(
+                "This device reports neither a middle button nor a scroll method",
+                Level::Bad,
+            );
+            return;
+        }
+
+        self.modal = Some(Modal::MiddleButton(MiddleButton {
+            paste: device.middle_click_delivered().unwrap_or(false),
+            scroll: device.button_scrolling().unwrap_or(false),
+            cursor: 0,
+            paste_supported,
+            scroll_supported,
+        }));
+    }
+
+    /// Apply both halves of the middle-button choice at once, since leaving one
+    /// staged and the other live is exactly the confusion this screen exists to
+    /// remove.
+    pub fn apply_middle_button(&mut self, choice: MiddleButton) {
+        let index = self.sel_device;
+        let Some(id) = self.devices[index].id() else {
+            return;
+        };
+        let mut done: Vec<String> = Vec::new();
+
+        if choice.paste_supported {
+            let restore = self.devices[index]
+                .original_buttons
+                .get(1)
+                .copied()
+                .filter(|b| *b != 0)
+                .unwrap_or(2);
+            let target = if choice.paste { restore } else { 0 };
+            if self.devices[index].pending_buttons.get(1) != Some(&target) {
+                self.devices[index].pending_buttons[1] = target;
+            }
+            if self.devices[index].buttons_dirty() {
+                let map = self.devices[index].pending_buttons.clone();
+                if let Err(e) = xinput::set_button_map(id, &map) {
+                    self.say(e.to_string(), Level::Bad);
+                    return;
+                }
+                match xinput::get_button_map(id) {
+                    Ok(confirmed) => {
+                        let took = confirmed == map;
+                        self.devices[index].buttons = confirmed;
+                        if !took {
+                            self.say(
+                                "the X server accepted the button map but kept the old one",
+                                Level::Bad,
+                            );
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        self.say(e.to_string(), Level::Bad);
+                        return;
+                    }
                 }
             }
-            Err(e) => self.say(e.to_string(), Level::Bad),
+            done.push(format!("paste {}", if choice.paste { "on" } else { "off" }));
+        }
+
+        if choice.scroll_supported
+            && let Some(row_index) = self.devices[index].scroll_prop()
+        {
+            let mut values = self.devices[index].props[row_index].pending.clone();
+            if values.len() > SCROLL_BUTTON_INDEX {
+                values[SCROLL_BUTTON_INDEX] = if choice.scroll { "1" } else { "0" }.to_string();
+                if let Err(e) = xinput::set_prop(id, SCROLL_METHOD, &values) {
+                    self.say(e.to_string(), Level::Bad);
+                    return;
+                }
+                self.devices[index].props[row_index].pending = values.clone();
+                if let PropValue::Numbers(live) =
+                    &mut self.devices[index].props[row_index].prop.value
+                {
+                    *live = values;
+                }
+                done.push(format!(
+                    "scroll {}",
+                    if choice.scroll { "on" } else { "off" }
+                ));
+            }
+        }
+
+        if done.is_empty() {
+            self.say("Nothing to change", Level::Info);
+        } else {
+            self.say(format!("Middle button: {}", done.join(", ")), Level::Good);
         }
     }
 
@@ -916,6 +1169,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::sysfs::{Attr, AttrKind, Node};
+    use crate::xinput::{Prop, PropValue};
     use std::path::PathBuf;
 
     fn attr(name: &str, value: &str, kind: AttrKind) -> Attr {
@@ -945,6 +1199,7 @@ mod tests {
                 path: PathBuf::from("/sys/devices/platform/i8042/serio1"),
                 description: String::new(),
                 firmware_id: String::new(),
+                input_names: Vec::new(),
                 attrs,
             }),
             note: None,
@@ -1072,6 +1327,94 @@ mod tests {
             kind: crate::xinput::Kind::SlavePointer,
         });
         assert!(a.x_settings().is_empty());
+    }
+
+    fn with_scroll(paste_disabled: bool, scroll_on: bool) -> App {
+        let mut a = app(vec![attr("sensitivity", "128", AttrKind::Range(0, 255))]);
+        let d = &mut a.devices[0];
+        d.x = Some(crate::xinput::XDevice {
+            id: 13,
+            name: "TPPS/2 Elan TrackPoint".into(),
+            kind: crate::xinput::Kind::SlavePointer,
+        });
+        d.buttons = vec![1, 2, 3, 4, 5, 6, 7];
+        d.original_buttons = vec![1, 2, 3, 4, 5, 6, 7];
+        d.pending_buttons = if paste_disabled {
+            vec![1, 0, 3, 4, 5, 6, 7]
+        } else {
+            vec![1, 2, 3, 4, 5, 6, 7]
+        };
+        let values = vec![
+            "0".to_string(),
+            "0".to_string(),
+            if scroll_on { "1" } else { "0" }.to_string(),
+        ];
+        d.props = vec![PropRow {
+            prop: Prop {
+                name: SCROLL_METHOD.to_string(),
+                value: PropValue::Numbers(values.clone()),
+                read_only: false,
+            },
+            pending: values.clone(),
+            original: values,
+        }];
+        a
+    }
+
+    #[test]
+    fn middle_button_reads_the_current_paste_and_scroll_state() {
+        let a = with_scroll(true, true);
+        assert_eq!(a.device().middle_click_delivered(), Some(false));
+        assert_eq!(a.device().button_scrolling(), Some(true));
+
+        let a = with_scroll(false, false);
+        assert_eq!(a.device().middle_click_delivered(), Some(true));
+        assert_eq!(a.device().button_scrolling(), Some(false));
+    }
+
+    #[test]
+    fn middle_button_panel_opens_with_the_live_values() {
+        let mut a = with_scroll(true, true);
+        a.open_middle_button();
+        match a.modal {
+            Some(Modal::MiddleButton(ref choice)) => {
+                assert!(!choice.paste, "paste is currently off");
+                assert!(choice.scroll, "scroll is currently on");
+                assert!(choice.paste_supported && choice.scroll_supported);
+            }
+            _ => panic!("expected the middle button panel"),
+        }
+    }
+
+    #[test]
+    fn a_device_with_neither_capability_gets_no_panel() {
+        let mut a = app(vec![attr("sensitivity", "128", AttrKind::Range(0, 255))]);
+        a.devices[0].x = Some(crate::xinput::XDevice {
+            id: 9,
+            name: "Odd Device".into(),
+            kind: crate::xinput::Kind::SlavePointer,
+        });
+        a.devices[0].buttons = Vec::new();
+        a.devices[0].pending_buttons = Vec::new();
+        a.devices[0].props = Vec::new();
+        a.open_middle_button();
+        assert!(a.modal.is_none());
+        assert_eq!(a.status.level, Level::Bad);
+    }
+
+    #[test]
+    fn scroll_and_paste_are_independent_settings() {
+        // The whole point: they live in different places, so one can be on
+        // while the other is off, in any combination.
+        for (paste, scroll) in [(true, true), (true, false), (false, true), (false, false)] {
+            let mut a = with_scroll(!paste, scroll);
+            a.open_middle_button();
+            let Some(Modal::MiddleButton(choice)) = a.modal.as_ref() else {
+                panic!("no panel");
+            };
+            assert_eq!(choice.paste, paste);
+            assert_eq!(choice.scroll, scroll);
+        }
     }
 
     #[test]

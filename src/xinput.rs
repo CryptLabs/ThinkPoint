@@ -280,6 +280,17 @@ pub fn set_enabled(id: u32, enabled: bool) -> Result<()> {
     run(&[action, &id.to_string()]).map(|_| ())
 }
 
+/// Ask the X server directly rather than trusting a value cached at start-up.
+/// Anything can have changed it since — another tool, another session, or a
+/// previous run of this one.
+pub fn read_enabled(id: u32) -> Result<bool> {
+    let props = list_props(id)?;
+    if !props.iter().any(|p| p.name == "Device Enabled") {
+        return Err(Error::new("device reports no Device Enabled property"));
+    }
+    Ok(is_enabled(&props))
+}
+
 pub fn set_enabled_command(name: &str, enabled: bool) -> String {
     let action = if enabled { "enable" } else { "disable" };
     format!("xinput {action} \"{name}\"")

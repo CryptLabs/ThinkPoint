@@ -27,6 +27,13 @@ middle-click pasting the primary selection. TrackPoint scrolling survives that:
 libinput consumes the button for scrolling before the X button map is applied,
 and scroll travels as buttons 4–7.
 
+**A middle-button chooser.** Press `b` to turn pasting and scrolling on or off
+independently for the middle button. They look like one setting and are two:
+pasting is the X button map delivering button 2 to applications, scrolling is
+libinput taking that button before the map is consulted. Scroll on with paste
+off — the stick still scrolls, a middle click no longer dumps the selection
+into whatever has focus — is the combination most people are after.
+
 **Turning a device off.** Press `t` to disable the selected device, `t` again
 to bring it back — the usual reason being a touchpad you keep brushing while
 typing. It takes effect at once, leaves every other setting on the device
@@ -73,10 +80,9 @@ cargo build --release
 install -Dm755 target/release/thinkpoint /usr/local/bin/thinkpoint
 ```
 
-Runtime dependencies: `xinput` for anything X11-side, `polkit` (for `pkexec`) to
-write sysfs and udev files without dropping to a shell. Neither is required —
-without `xinput` the tool falls back to sysfs-only, and without `pkexec` it
-prints the `sudo` command you need.
+Runtime dependencies: `xinput` for anything X11-side and `sudo` for writing
+sysfs and udev files. Without `xinput` the tool falls back to sysfs-only
+tuning.
 
 ## Keys
 
@@ -88,6 +94,7 @@ prints the `sudo` command you need.
 | `space` | toggle: disable a button, flip an on/off setting |
 | `e` | type a value |
 | `t` | turn the selected device off or on |
+| `b` | middle button: paste and scroll, chosen separately |
 | `p` | stage the drift-reducing preset on this device |
 | `m` | measure drift with your hands off the machine |
 | `a` | apply everything staged in this section |
@@ -99,6 +106,21 @@ prints the `sudo` command you need.
 
 Changes are staged and applied with `a`, so nothing moves under you while you
 are looking at it. Nothing is written to disk except from the `s` screen.
+
+## Root access
+
+Writing sysfs attributes and the udev rule needs root. ThinkPoint tries, in
+order: a direct write, in case you are already root; `sudo -n`, which succeeds
+if you have NOPASSWD or a still-valid sudo timestamp; and failing both, it asks
+for your password in a prompt inside the interface.
+
+The password goes to `sudo` on standard input. It never reaches a command line
+where `ps` would show it, never touches a file, and is overwritten in memory as
+soon as sudo has taken it. Because sudo caches its own authentication for a few
+minutes, one prompt usually covers a whole session of tinkering.
+
+There is no dependency on a polkit agent, which under a bare window manager is
+often not running at all.
 
 ## On drift
 

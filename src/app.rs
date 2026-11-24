@@ -193,7 +193,8 @@ pub enum Modal {
     Persist {
         rule: String,
         profile: String,
-        /// 0 = udev rule, 1 = X profile.
+        xorg: String,
+        /// 0 = udev rule, 1 = X profile, 2 = xorg.conf.d snippet.
         choice: usize,
     },
     Edit {
@@ -236,6 +237,8 @@ pub enum RootAction {
     Sysfs,
     /// Write the generated udev rule.
     Udev(String),
+    /// Write the generated xorg.conf.d snippet.
+    Xorg(String),
 }
 
 impl RootAction {
@@ -243,6 +246,7 @@ impl RootAction {
         match self {
             RootAction::Sysfs => "write the staged sysfs values".to_string(),
             RootAction::Udev(_) => format!("write {}", persist::UDEV_PATH),
+            RootAction::Xorg(_) => format!("write {}", crate::xorg::XORG_PATH),
         }
     }
 }
@@ -732,6 +736,15 @@ impl App {
                     )
                 })
             }
+            RootAction::Xorg(snippet) => {
+                let snippet = snippet.clone();
+                sysfs::write_root_file(crate::xorg::XORG_PATH, &snippet, Some(password)).map(|_| {
+                    format!(
+                        "Wrote {} — applies at the next X start",
+                        crate::xorg::XORG_PATH
+                    )
+                })
+            }
         };
         match result {
             Ok(message) => self.say(message, Level::Good),
@@ -879,10 +892,13 @@ impl App {
         // replacing it.
         let existing = std::fs::read_to_string(persist::UDEV_PATH).ok();
         let rule = persist::udev_rule(&nodes, true, existing.as_deref());
-        let profile = persist::render_profile(&self.x_settings());
+        let settings = self.x_settings();
+        let profile = persist::render_profile(&settings);
+        let xorg = crate::xorg::snippet(&settings);
         self.modal = Some(Modal::Persist {
             rule,
             profile,
+            xorg,
             choice: 0,
         });
     }
@@ -908,6 +924,24 @@ impl App {
     pub fn install_autostart(&mut self) {
         match autostart::install() {
             Ok(message) => self.say(message, Level::Good),
+            Err(e) => self.say(e.to_string(), Level::Bad),
+        }
+    }
+
+    /// Write the X configuration snippet. Needs root, and takes effect when
+    /// the X server next starts rather than now.
+    pub fn write_xorg(&mut self, snippet: &str) {
+        match sysfs::write_root_file(crate::xorg::XORG_PATH, snippet, None) {
+            Ok(_) => self.say(
+                format!(
+                    "Wrote {} — applies at the next X start",
+                    crate::xorg::XORG_PATH
+                ),
+                Level::Good,
+            ),
+            Err(e) if e.is_needs_password() => {
+                self.ask_for_password(RootAction::Xorg(snippet.to_string()), None)
+            }
             Err(e) => self.say(e.to_string(), Level::Bad),
         }
     }

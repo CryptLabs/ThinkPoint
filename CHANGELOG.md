@@ -5,6 +5,26 @@ Notable changes to ThinkPoint. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html) — while the major
 version is 0, a minor bump may still change behaviour.
 
+## [0.4.0] — 2026-11-24
+
+### Added
+
+- A third save target: an xorg.conf.d snippet at
+  `/etc/X11/xorg.conf.d/50-thinkpoint.conf`. The X server reads it when it
+  creates the device, so the button map and libinput settings come back after a
+  reboot with no autostart hook at all — which is the honest answer for anyone
+  who does not want a line in their window manager's config. `--print-xorg`
+  prints it without writing anything.
+- The save screen names, for each target, when it takes effect: the udev rule
+  when the device appears, the profile at login, the snippet at the next X
+  start. Guessing wrong is why a setting can look like it did not persist.
+
+### Changed
+
+- Settings with no xf86-input-libinput option are named in a comment inside the
+  snippet rather than quietly left out, so it is clear which ones still rely on
+  the profile.
+
 ## [0.3.2] — 2026-11-24
 
 ### Fixed
@@ -145,6 +165,7 @@ First release.
   `--restore` for the X-side settings udev cannot reach.
 - `--print-rule` and `--print-profile`.
 
+[0.4.0]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.4.0
 [0.3.2]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.3.2
 [0.3.1]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.3.1
 [0.3.0]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.3.0

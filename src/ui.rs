@@ -628,42 +628,53 @@ fn draw_modal(frame: &mut Frame, app: &mut App) {
         Some(Modal::Persist {
             rule,
             profile,
+            xorg,
             choice,
         }) => {
-            let showing_rule = *choice == 0;
-            let content = if showing_rule {
-                rule.clone()
-            } else {
-                profile.clone()
+            let content = match choice {
+                0 => rule.clone(),
+                1 => profile.clone(),
+                _ => xorg.clone(),
+            };
+
+            let tab = |index: usize, label: &str| {
+                Span::styled(
+                    format!("{} {label}  ", if *choice == index { "▸" } else { " " }),
+                    Style::default().fg(if *choice == index { ACCENT } else { DIM }),
+                )
             };
             let mut lines = vec![Line::from(vec![
+                tab(0, "udev rule"),
+                tab(1, "X profile"),
+                tab(2, "xorg.conf.d"),
                 Span::styled(
-                    if showing_rule {
-                        "▸ udev rule "
-                    } else {
-                        "  udev rule "
-                    },
-                    Style::default().fg(if showing_rule { ACCENT } else { DIM }),
+                    "   ← → switch · enter write · i autostart",
+                    Style::default().fg(DIM),
                 ),
-                Span::styled(
-                    if showing_rule {
-                        "  X profile"
-                    } else {
-                        "▸ X profile"
-                    },
-                    Style::default().fg(if showing_rule { DIM } else { ACCENT }),
-                ),
-                Span::styled("      ← → switch · enter write · i autostart", Style::default().fg(DIM)),
             ])];
+
             lines.push(Line::from(Span::styled(
-                if showing_rule {
-                    format!("target: {}  (needs root)", crate::persist::UDEV_PATH)
-                } else {
-                    format!("target: {}", crate::persist::profile_path().display())
+                match choice {
+                    0 => format!("target: {}  (needs root)", crate::persist::UDEV_PATH),
+                    1 => format!("target: {}", crate::persist::profile_path().display()),
+                    _ => format!("target: {}  (needs root)", crate::xorg::XORG_PATH),
                 },
                 Style::default().fg(Color::Magenta),
             )));
-            if !showing_rule {
+
+            // Each target comes back to life at a different moment, and
+            // assuming the wrong one is how a setting looks like it did not
+            // persist when it was simply not read yet.
+            lines.push(Line::from(Span::styled(
+                match choice {
+                    0 => "applies when the device appears: a reboot, or a resume".to_string(),
+                    1 => String::new(),
+                    _ => "applies when the X server next starts — no autostart needed".to_string(),
+                },
+                Style::default().fg(DIM),
+            )));
+
+            if *choice == 1 {
                 // A saved profile that nothing replays is the single easiest
                 // way to think these settings persist when they do not.
                 lines.push(match crate::autostart::status() {
@@ -673,18 +684,20 @@ fn draw_modal(frame: &mut Frame, app: &mut App) {
                     )),
                     crate::autostart::Status::Missing(path) => Line::from(Span::styled(
                         format!(
-                            "nothing replays this at login — press i to add it to {}",
+                            "nothing replays this at login — press i to add it to {}, \
+                             or use the xorg.conf.d pane instead",
                             path.display()
                         ),
                         Style::default().fg(PENDING),
                     )),
                     crate::autostart::Status::NoConfig => Line::from(Span::styled(
-                        "nothing replays this at login — run `thinkpoint --restore` \
-                         from your session's autostart",
+                        "nothing replays this at login — use the xorg.conf.d pane, or run \
+                         `thinkpoint --restore` from your session's autostart",
                         Style::default().fg(PENDING),
                     )),
                 });
             }
+
             lines.push(Line::from(""));
             for line in content.lines() {
                 let style = if line.trim_start().starts_with('#') {
@@ -1492,6 +1505,46 @@ mod tests {
         assert!(
             first_line.contains(env!("CARGO_PKG_VERSION")),
             "version belongs on the title bar: {first_line}"
+        );
+    }
+
+    #[test]
+    fn the_save_screen_offers_all_three_targets() {
+        let mut a = app(Tab::Buttons);
+        a.open_persist();
+        let screen = render(&mut a);
+        assert!(screen.contains("udev rule"));
+        assert!(screen.contains("X profile"));
+        assert!(screen.contains("xorg.conf.d"), "{screen}");
+    }
+
+    #[test]
+    fn the_xorg_pane_says_it_needs_no_autostart() {
+        let mut a = app(Tab::Buttons);
+        a.open_persist();
+        if let Some(Modal::Persist { choice, .. }) = a.modal.as_mut() {
+            *choice = 2;
+        }
+        let screen = render(&mut a);
+        assert!(
+            screen.contains("/etc/X11/xorg.conf.d/50-thinkpoint.conf"),
+            "{screen}"
+        );
+        assert!(screen.contains("no autostart needed"));
+    }
+
+    #[test]
+    fn the_profile_pane_points_at_the_alternative_when_nothing_replays_it() {
+        let mut a = app(Tab::Buttons);
+        a.open_persist();
+        if let Some(Modal::Persist { choice, .. }) = a.modal.as_mut() {
+            *choice = 1;
+        }
+        let screen = render(&mut a);
+        // Either it is wired up, or it should name the way out.
+        assert!(
+            screen.contains("replayed at login") || screen.contains("xorg.conf.d pane"),
+            "{screen}"
         );
     }
 

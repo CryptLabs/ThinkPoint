@@ -419,7 +419,10 @@ mod tests {
             rule.contains(r#"ACTION=="add|bind""#),
             "rule must fire when the driver binds:\n{rule}"
         );
-        assert!(!rule.contains(r#"ACTION=="add","#), "no add-only match should remain");
+        assert!(
+            !rule.contains(r#"ACTION=="add","#),
+            "no add-only match should remain"
+        );
     }
 
     #[test]
@@ -433,10 +436,7 @@ mod tests {
             ..node(vec![attr("sensitivity", "128", "56")])
         };
         let rule = udev_rule(&[trackpoint, touchpad], true, None);
-        let live = rule
-            .lines()
-            .filter(|l| l.starts_with("ACTION=="))
-            .count();
+        let live = rule.lines().filter(|l| l.starts_with("ACTION==")).count();
         assert_eq!(live, 1, "one rule, not two:\n{rule}");
     }
 
@@ -452,7 +452,10 @@ mod tests {
             ..node(vec![attr("sensitivity", "128", "56")])
         };
         let rule = udev_rule(&[full, subset], true, None);
-        assert_eq!(rule.lines().filter(|l| l.starts_with("ACTION==")).count(), 1);
+        assert_eq!(
+            rule.lines().filter(|l| l.starts_with("ACTION==")).count(),
+            1
+        );
         assert!(rule.contains("resetafter"));
     }
 

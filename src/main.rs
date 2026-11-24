@@ -9,6 +9,7 @@ mod persist;
 mod sysfs;
 mod ui;
 mod xinput;
+mod xorg;
 
 use std::process::ExitCode;
 use std::time::Duration;
@@ -34,6 +35,7 @@ fn main() -> ExitCode {
         }
         Some("--print-rule") => print_rule(),
         Some("--print-profile") => print_profile(),
+        Some("--print-xorg") => print_xorg(),
         Some("--restore") => restore(),
         Some("--install-autostart") => install_autostart(),
         Some(other) => {
@@ -66,6 +68,7 @@ USAGE:
                                the X-side settings come back after a login
     thinkpoint --print-rule    print a udev rule for the current sysfs values
     thinkpoint --print-profile print the saved X profile
+    thinkpoint --print-xorg    print an xorg.conf.d snippet for the X settings
     thinkpoint --help          this text
     thinkpoint --version       version
 
@@ -96,6 +99,12 @@ fn print_rule() -> Result<()> {
 fn print_profile() -> Result<()> {
     let settings = persist::load_profile()?;
     print!("{}", persist::render_profile(&settings));
+    Ok(())
+}
+
+fn print_xorg() -> Result<()> {
+    let settings = persist::load_profile().unwrap_or_default();
+    print!("{}", xorg::snippet(&settings));
     Ok(())
 }
 
@@ -306,9 +315,14 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) {
     let is_persist = matches!(app.modal, Some(Modal::Persist { .. }));
     match key.code {
         KeyCode::Esc | KeyCode::Char('q') => app.modal = None,
-        KeyCode::Left | KeyCode::Right | KeyCode::Tab if is_persist => {
+        KeyCode::Right | KeyCode::Tab if is_persist => {
             if let Some(Modal::Persist { choice, .. }) = app.modal.as_mut() {
-                *choice = 1 - *choice;
+                *choice = (*choice + 1) % 3;
+            }
+        }
+        KeyCode::Left if is_persist => {
+            if let Some(Modal::Persist { choice, .. }) = app.modal.as_mut() {
+                *choice = (*choice + 2) % 3;
             }
         }
         KeyCode::Char('i') if is_persist => {
@@ -317,12 +331,14 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Enter if is_persist => {
             let payload = match app.modal.as_ref() {
-                Some(Modal::Persist { rule, choice, .. }) => Some((rule.clone(), *choice)),
+                Some(Modal::Persist {
+                    rule, xorg, choice, ..
+                }) => Some((rule.clone(), xorg.clone(), *choice)),
                 _ => None,
             };
             app.modal = None;
             match payload {
-                Some((rule, 0)) => {
+                Some((rule, _, 0)) => {
                     if rule.contains("Nothing to persist") {
                         app.say(
                             "Nothing has changed, so there is nothing to write",
@@ -332,7 +348,17 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) {
                         app.write_udev(&rule);
                     }
                 }
-                Some((_, _)) => app.write_profile(),
+                Some((_, _, 1)) => app.write_profile(),
+                Some((_, xorg, _)) => {
+                    if xorg.contains("Nothing to persist") {
+                        app.say(
+                            "No X settings have been changed, so there is nothing to write",
+                            Level::Warn,
+                        );
+                    } else {
+                        app.write_xorg(&xorg);
+                    }
+                }
                 None => {}
             }
         }

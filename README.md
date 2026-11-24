@@ -293,7 +293,27 @@ replay the profile and offers `i` to add it.
 exec_always --no-startup-id thinkpoint --restore
 ```
 
-For any other window manager, add that line to its autostart yourself. Saving merges with the existing profile rather than replacing
+For any other window manager, add that line to its autostart yourself.
+
+**Or skip the autostart entirely.** The third pane on the `s` screen writes an
+xorg.conf.d snippet:
+
+```
+Section "InputClass"
+    Identifier  "ThinkPoint TPPS/2 Elan TrackPoint"
+    MatchDriver "libinput"
+    MatchProduct "TPPS/2 Elan TrackPoint"
+    Option "ButtonMapping" "1 0 3 4 5 6 7"
+EndSection
+```
+
+The X server reads this when it creates the device, so there is nothing to
+replay and nothing to hook into your session. It needs root, it takes effect at
+the next X start rather than immediately, and only settings with a driver
+option equivalent can go in it — the snippet names the ones that cannot in a
+comment rather than dropping them silently.
+
+`thinkpoint --print-xorg` prints it without writing anything. Saving merges with the existing profile rather than replacing
 it, for the same reason the udev rule does.
 
 ## Command line
@@ -303,6 +323,9 @@ thinkpoint                  open the terminal interface
 thinkpoint --restore        reapply saved button maps and libinput properties
 thinkpoint --print-rule     print a udev rule for the current sysfs values
 thinkpoint --print-profile  print the saved X profile
+thinkpoint --print-xorg     print an xorg.conf.d snippet for the X settings
+thinkpoint --install-autostart
+                            wire --restore into the i3 config
 ```
 
 ## Notes

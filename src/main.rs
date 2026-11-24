@@ -2,6 +2,7 @@
 //! live in scattered sysfs files and half-remembered xinput incantations.
 
 mod app;
+mod autostart;
 mod detect;
 mod error;
 mod persist;
@@ -34,6 +35,7 @@ fn main() -> ExitCode {
         Some("--print-rule") => print_rule(),
         Some("--print-profile") => print_profile(),
         Some("--restore") => restore(),
+        Some("--install-autostart") => install_autostart(),
         Some(other) => {
             eprintln!("thinkpoint: unknown argument {other:?}");
             print_help();
@@ -59,6 +61,9 @@ USAGE:
     thinkpoint                 open the terminal interface
     thinkpoint --restore       reapply the saved button maps and libinput
                                properties to the running X session
+    thinkpoint --install-autostart
+                               add the --restore line to your i3 config, so
+                               the X-side settings come back after a login
     thinkpoint --print-rule    print a udev rule for the current sysfs values
     thinkpoint --print-profile print the saved X profile
     thinkpoint --help          this text
@@ -127,6 +132,11 @@ fn restore() -> Result<()> {
     }
 
     println!("thinkpoint: applied {applied} setting(s)");
+    Ok(())
+}
+
+fn install_autostart() -> Result<()> {
+    println!("thinkpoint: {}", autostart::install()?);
     Ok(())
 }
 
@@ -300,6 +310,10 @@ fn handle_modal_key(app: &mut App, key: KeyEvent) {
             if let Some(Modal::Persist { choice, .. }) = app.modal.as_mut() {
                 *choice = 1 - *choice;
             }
+        }
+        KeyCode::Char('i') if is_persist => {
+            app.modal = None;
+            app.install_autostart();
         }
         KeyCode::Enter if is_persist => {
             let payload = match app.modal.as_ref() {

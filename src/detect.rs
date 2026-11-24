@@ -237,11 +237,9 @@ impl MotionParser {
             .and_then(|t| t.parse::<f64>().ok())?;
         let device_id = self.device?;
 
-        let delta = match self.last.insert((device_id, axis), value) {
-            Some(previous) => value - previous,
-            // First sighting of this axis establishes the baseline only.
-            None => return None,
-        };
+        // First sighting of this axis establishes the baseline and nothing else.
+        let previous = self.last.insert((device_id, axis), value)?;
+        let delta = value - previous;
         if delta.abs() > IMPLAUSIBLE_DELTA {
             return None;
         }

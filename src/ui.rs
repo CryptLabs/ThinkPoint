@@ -653,7 +653,7 @@ fn draw_modal(frame: &mut Frame, app: &mut App) {
                     },
                     Style::default().fg(if showing_rule { DIM } else { ACCENT }),
                 ),
-                Span::styled("      ← → switch · enter write", Style::default().fg(DIM)),
+                Span::styled("      ← → switch · enter write · i autostart", Style::default().fg(DIM)),
             ])];
             lines.push(Line::from(Span::styled(
                 if showing_rule {
@@ -663,6 +663,28 @@ fn draw_modal(frame: &mut Frame, app: &mut App) {
                 },
                 Style::default().fg(Color::Magenta),
             )));
+            if !showing_rule {
+                // A saved profile that nothing replays is the single easiest
+                // way to think these settings persist when they do not.
+                lines.push(match crate::autostart::status() {
+                    crate::autostart::Status::Installed(path) => Line::from(Span::styled(
+                        format!("replayed at login by {}", path.display()),
+                        Style::default().fg(Color::Green),
+                    )),
+                    crate::autostart::Status::Missing(path) => Line::from(Span::styled(
+                        format!(
+                            "nothing replays this at login — press i to add it to {}",
+                            path.display()
+                        ),
+                        Style::default().fg(PENDING),
+                    )),
+                    crate::autostart::Status::NoConfig => Line::from(Span::styled(
+                        "nothing replays this at login — run `thinkpoint --restore` \
+                         from your session's autostart",
+                        Style::default().fg(PENDING),
+                    )),
+                });
+            }
             lines.push(Line::from(""));
             for line in content.lines() {
                 let style = if line.trim_start().starts_with('#') {

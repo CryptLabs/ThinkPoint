@@ -1,5 +1,6 @@
 //! Application state and the actions the key bindings drive.
 
+use crate::autostart;
 use crate::detect::{Detector, Meter};
 use crate::error::{Error, Result};
 use crate::persist::{self, XSetting};
@@ -898,6 +899,15 @@ impl App {
             Err(e) if e.is_needs_password() => {
                 self.ask_for_password(RootAction::Udev(rule.to_string()), None)
             }
+            Err(e) => self.say(e.to_string(), Level::Bad),
+        }
+    }
+
+    /// Wire `--restore` into the window manager's autostart. Saving the
+    /// profile without this writes a file nothing ever reads.
+    pub fn install_autostart(&mut self) {
+        match autostart::install() {
+            Ok(message) => self.say(message, Level::Good),
             Err(e) => self.say(e.to_string(), Level::Bad),
         }
     }

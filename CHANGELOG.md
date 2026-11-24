@@ -5,6 +5,30 @@ Notable changes to ThinkPoint. The format follows
 [semantic versioning](https://semver.org/spec/v2.0.0.html) — while the major
 version is 0, a minor bump may still change behaviour.
 
+## [0.3.2] — 2026-11-24
+
+### Fixed
+
+- The generated udev rule never fired at boot, so sysfs settings did not come
+  back. It matched `ACTION=="add"` and `DRIVERS=="psmouse"` together, but a
+  serio device is added before psmouse binds to it: at that moment there is no
+  driver to match and no `sensitivity` file to write. Rules now match
+  `add|bind`, and `bind` is the event that fires when the driver attaches and
+  the attributes appear.
+- Identical rules are no longer written twice. Every psmouse device produced
+  the same broad rule, so a machine with both a TrackPoint and a touchpad got
+  the same line once per device. A rule whose assignments are already covered
+  by one written earlier is dropped; genuinely different values still get their
+  own rule.
+
+### Added
+
+- `--install-autostart` adds the `--restore` line to your i3 config, keeping a
+  backup, and does nothing if a line is already there. The save screen now says
+  whether anything will replay the profile at login, with `i` to wire it up.
+  Saving the profile without that is writing a file nothing ever reads, which
+  looked exactly like the settings not persisting.
+
 ## [0.3.1] — 2026-09-03
 
 ### Changed
@@ -121,6 +145,7 @@ First release.
   `--restore` for the X-side settings udev cannot reach.
 - `--print-rule` and `--print-profile`.
 
+[0.3.2]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.3.2
 [0.3.1]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.3.1
 [0.3.0]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.3.0
 [0.2.0]: https://github.com/CryptLabs/ThinkPoint/releases/tag/v0.2.0

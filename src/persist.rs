@@ -17,6 +17,15 @@ use crate::sysfs::Node;
 
 pub const UDEV_PATH: &str = "/etc/udev/rules.d/70-thinkpoint.rules";
 
+/// The match every generated rule opens with.
+///
+/// `bind` matters as much as `add`. A serio device is added before psmouse
+/// binds to it, and until that happens the device has no driver and no
+/// `sensitivity` attribute to write — so a rule keyed on `add` alone matches
+/// nothing at boot and the settings silently never come back. `bind` fires at
+/// the moment the driver attaches and the attributes appear.
+const MATCH: &str = r#"ACTION=="add|bind", SUBSYSTEM=="serio", DRIVERS=="psmouse""#;
+
 #[derive(Debug, Clone)]
 pub struct XSetting {
     pub device: String,
@@ -74,11 +83,16 @@ pub fn udev_rule(nodes: &[Node], only_changed: bool, existing: Option<&str>) -> 
     out.push_str("# unless you save from the tool again.\n");
     out.push_str("#\n");
     out.push_str("# Reload with:  sudo udevadm control --reload\n");
-    out.push_str("#               sudo udevadm trigger --subsystem-match=serio\n\n");
+    out.push_str("#               sudo udevadm trigger --action=add --subsystem-match=serio\n\n");
 
+    // Collect first, so an identical or narrower rule can be dropped rather
+    // than written twice. Several serio devices match DRIVERS=="psmouse", and
+    // the broad rule they each produce is the same rule.
+    let mut emitted: Vec<Vec<(String, String)>> = Vec::new();
     let mut wrote_any = false;
+
     for node in nodes {
-        let assignments: Vec<String> = node
+        let assignments: Vec<(String, String)> = node
             .attrs
             .iter()
             .filter_map(|a| {
@@ -94,30 +108,37 @@ pub fn udev_rule(nodes: &[Node], only_changed: bool, existing: Option<&str>) -> 
                     .find(|(name, _)| *name == a.name)
                     .map(|(name, value)| (name.clone(), value.clone()))
             })
-            .map(|(name, value)| format!("ATTR{{{name}}}=\"{value}\""))
             .collect();
         if assignments.is_empty() {
             continue;
         }
+        if emitted
+            .iter()
+            .any(|done| assignments.iter().all(|pair| done.contains(pair)))
+        {
+            continue;
+        }
+
+        let rendered: Vec<String> = assignments
+            .iter()
+            .map(|(name, value)| format!("ATTR{{{name}}}=\"{value}\""))
+            .collect();
+        let rendered = rendered.join(", ");
         wrote_any = true;
 
         if !node.description.is_empty() {
             out.push_str(&format!("# {}\n", node.description));
         }
-        out.push_str(&format!(
-            "ACTION==\"add\", SUBSYSTEM==\"serio\", DRIVERS==\"psmouse\", {}\n",
-            assignments.join(", ")
-        ));
+        out.push_str(&format!("{MATCH}, {rendered}\n"));
         if !node.firmware_id.is_empty() {
             out.push_str(&format!(
                 "# Narrower alternative, matching this device alone:\n\
-                 # ACTION==\"add\", SUBSYSTEM==\"serio\", DRIVERS==\"psmouse\", \
-                 ATTR{{firmware_id}}==\"{}\", {}\n",
+                 # {MATCH}, ATTR{{firmware_id}}==\"{}\", {rendered}\n",
                 node.firmware_id,
-                assignments.join(", ")
             ));
         }
         out.push('\n');
+        emitted.push(assignments);
     }
 
     if !wrote_any {
@@ -324,7 +345,7 @@ mod tests {
     #[test]
     fn rule_offers_a_device_specific_alternative() {
         let rule = udev_rule(&[node(vec![attr("sensitivity", "128", "90")])], true, None);
-        assert!(rule.contains("# ACTION==\"add\""));
+        assert!(rule.contains("# ACTION==\"add|bind\""));
         assert!(rule.contains("ATTR{firmware_id}==\"PNP: LEN0321 PNP0f13\""));
     }
 
@@ -385,6 +406,70 @@ mod tests {
         let merged = udev_rule(&[now], true, Some(previous));
         assert!(!merged.contains("drift_time"));
         assert!(merged.contains("ATTR{sensitivity}=\"90\""));
+    }
+
+    #[test]
+    fn the_rule_matches_bind_as_well_as_add() {
+        // The bug this exists for: a serio device is added before psmouse binds
+        // to it, so at boot there is no driver to match and no sensitivity file
+        // to write. Keyed on add alone, the rule never fired and the settings
+        // silently did not come back.
+        let rule = udev_rule(&[node(vec![attr("sensitivity", "128", "56")])], true, None);
+        assert!(
+            rule.contains(r#"ACTION=="add|bind""#),
+            "rule must fire when the driver binds:\n{rule}"
+        );
+        assert!(!rule.contains(r#"ACTION=="add","#), "no add-only match should remain");
+    }
+
+    #[test]
+    fn an_identical_rule_is_not_written_twice() {
+        // Every psmouse device produces the same broad rule, so a machine with
+        // a TrackPoint and a touchpad was getting the same line twice.
+        let trackpoint = node(vec![attr("sensitivity", "128", "56")]);
+        let touchpad = Node {
+            description: String::new(),
+            firmware_id: String::new(),
+            ..node(vec![attr("sensitivity", "128", "56")])
+        };
+        let rule = udev_rule(&[trackpoint, touchpad], true, None);
+        let live = rule
+            .lines()
+            .filter(|l| l.starts_with("ACTION=="))
+            .count();
+        assert_eq!(live, 1, "one rule, not two:\n{rule}");
+    }
+
+    #[test]
+    fn a_narrower_duplicate_is_folded_into_the_wider_rule() {
+        let full = node(vec![
+            attr("sensitivity", "128", "56"),
+            attr("resetafter", "5", "0"),
+        ]);
+        let subset = Node {
+            description: String::new(),
+            firmware_id: String::new(),
+            ..node(vec![attr("sensitivity", "128", "56")])
+        };
+        let rule = udev_rule(&[full, subset], true, None);
+        assert_eq!(rule.lines().filter(|l| l.starts_with("ACTION==")).count(), 1);
+        assert!(rule.contains("resetafter"));
+    }
+
+    #[test]
+    fn two_devices_wanting_different_values_both_get_a_rule() {
+        let a = node(vec![attr("sensitivity", "128", "56")]);
+        let b = Node {
+            description: String::new(),
+            firmware_id: String::new(),
+            ..node(vec![attr("sensitivity", "128", "90")])
+        };
+        let rule = udev_rule(&[a, b], true, None);
+        assert_eq!(
+            rule.lines().filter(|l| l.starts_with("ACTION==")).count(),
+            2,
+            "different values are not duplicates:\n{rule}"
+        );
     }
 
     #[test]

@@ -146,7 +146,7 @@ build.
 | `space` | toggle: disable a button, flip an on/off setting |
 | `e` | type a value |
 | `t` | turn the selected device off or on |
-| `i` | about: version, links and what this session found |
+| `i` | about: version, links and what this session found (on the save screen, wire up autostart) |
 | `b` | middle button: paste and scroll, chosen separately |
 | `p` | stage the drift-reducing preset on this device |
 | `m` | measure drift with your hands off the machine |
@@ -278,14 +278,22 @@ with:
 thinkpoint --restore
 ```
 
-Wire that into whatever starts your session — for i3:
+Without that nothing on the X side comes back after a login, however many times
+you save, so ThinkPoint can wire it up for you:
+
+```sh
+thinkpoint --install-autostart
+```
+
+That adds the line below to your i3 config, keeps a backup beside it, and does
+nothing if a line is already there. The `s` screen says whether anything will
+replay the profile and offers `i` to add it.
 
 ```
 exec_always --no-startup-id thinkpoint --restore
 ```
 
-Without that line nothing on the X side comes back after a login, however many
-times you save. Saving merges with the existing profile rather than replacing
+For any other window manager, add that line to its autostart yourself. Saving merges with the existing profile rather than replacing
 it, for the same reason the udev rule does.
 
 ## Command line
